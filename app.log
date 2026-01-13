@@ -1,0 +1,104 @@
+--- ç³»ç»Ÿå¯åŠ¨äº Tue Jan 13 14:42:01 2026 ---
+2026-01-13 14:42:28 INFO: åº”ç”¨ç¨‹åºå·²å¯åŠ¨
+2026-01-13 14:42:30 DEBUG: æ­£åœ¨è¿›è¡Œæ•°æ®å¤„ç†...
+2026-01-13 14:42:32 ERROR: å‘ç”Ÿäº†æœªçŸ¥é”™è¯¯ - ValueError: invalid literal for int() with base 10: 'abc'
+2026-01-13 14:42:34 INFO: å†™å…¥å®Œæˆã€‚
+2026-01-13 14:49:10 INFO: åº”ç”¨ç¨‹åºå·²å¯åŠ¨
+2026-01-13 14:49:12 DEBUG: æ­£åœ¨è¿›è¡Œæ•°æ®å¤„ç†...
+2026-01-13 14:49:14 ERROR: å‘ç”Ÿäº†æœªçŸ¥é”™è¯¯ - ValueError: invalid literal for int() with base 10: 'abc'
+2026-01-13 14:49:16 INFO: å†™å…¥å®Œæˆã€‚
+2026-01-13 14:57:40 INFO: ·şÎñÒÑÆô¶¯ - v1.0.0
+2026-01-13 14:57:41 INFO: ³õÊ¼»¯×é¼ş³É¹¦
+2026-01-13 14:57:41 INFO: ¿ªÊ¼´¦ÀíÏîÄ¿: 100
+2026-01-13 14:57:42 DEBUG: ÕıÔÚ´¦ÀíÊı¾İ: 100
+2026-01-13 14:57:42 INFO: ÏîÄ¿´¦Àí³É¹¦: 100
+2026-01-13 14:57:42 INFO: ¿ªÊ¼´¦ÀíÏîÄ¿: 200
+2026-01-13 14:57:42 DEBUG: ÕıÔÚ´¦ÀíÊı¾İ: 200
+2026-01-13 14:57:42 INFO: ÏîÄ¿´¦Àí³É¹¦: 200
+2026-01-13 14:57:42 INFO: ¿ªÊ¼´¦ÀíÏîÄ¿: abc
+2026-01-13 14:57:43 DEBUG: ÕıÔÚ´¦ÀíÊı¾İ: abc
+2026-01-13 14:57:43 ERROR: ´¦Àí¹ı³ÌÖĞ·¢ÉúÑÏÖØ´íÎó
+Traceback (most recent call last):
+  File "C:\Users\asta1\PycharmProjects\ai-ops\app.py", line 32, in main
+    result = process_data(item)
+             ^^^^^^^^^^^^^^^^^^
+  File "C:\Users\asta1\PycharmProjects\ai-ops\app.py", line 16, in process_data
+    return int(data)
+           ^^^^^^^^^
+ValueError: invalid literal for int() with base 10: 'abc'
+2026-01-13 14:58:16 INFO: ·şÎñÒÑÆô¶¯ - v1.0.0
+2026-01-13 14:58:17 INFO: ³õÊ¼»¯×é¼ş³É¹¦
+2026-01-13 14:58:17 INFO: ¿ªÊ¼´¦ÀíÏîÄ¿: 100
+2026-01-13 14:58:17 DEBUG: ÕıÔÚ´¦ÀíÊı¾İ: 100
+2026-01-13 14:58:17 INFO: ÏîÄ¿´¦Àí³É¹¦: 100
+2026-01-13 14:58:17 INFO: ¿ªÊ¼´¦ÀíÏîÄ¿: 200
+2026-01-13 14:58:18 DEBUG: ÕıÔÚ´¦ÀíÊı¾İ: 200
+2026-01-13 14:58:18 INFO: ÏîÄ¿´¦Àí³É¹¦: 200
+2026-01-13 14:58:18 INFO: ¿ªÊ¼´¦ÀíÏîÄ¿: abc
+2026-01-13 14:58:18 DEBUG: ÕıÔÚ´¦ÀíÊı¾İ: abc
+2026-01-13 14:58:18 ERROR: ´¦Àí¹ı³ÌÖĞ·¢ÉúÑÏÖØ´íÎó
+Traceback (most recent call last):
+  File "C:\Users\asta1\PycharmProjects\ai-ops\app.py", line 32, in main
+    result = process_data(item)
+             ^^^^^^^^^^^^^^^^^^
+  File "C:\Users\asta1\PycharmProjects\ai-ops\app.py", line 16, in process_data
+    return int(data)
+           ^^^^^^^^^
+ValueError: invalid literal for int() with base 10: 'abc'
+2026-01-13 15:00:43 INFO: æœåŠ¡å·²å¯åŠ¨ - v1.0.0
+2026-01-13 15:00:44 INFO: åˆå§‹åŒ–ç»„ä»¶æˆåŠŸ
+2026-01-13 15:00:44 INFO: å¼€å§‹å¤„ç†é¡¹ç›®: 100
+2026-01-13 15:00:44 DEBUG: æ­£åœ¨å¤„ç†æ•°æ®: 100
+2026-01-13 15:00:44 INFO: é¡¹ç›®å¤„ç†æˆåŠŸ: 100
+2026-01-13 15:00:44 INFO: å¼€å§‹å¤„ç†é¡¹ç›®: 200
+2026-01-13 15:00:45 DEBUG: æ­£åœ¨å¤„ç†æ•°æ®: 200
+2026-01-13 15:00:45 INFO: é¡¹ç›®å¤„ç†æˆåŠŸ: 200
+2026-01-13 15:00:45 INFO: å¼€å§‹å¤„ç†é¡¹ç›®: abc
+2026-01-13 15:00:45 DEBUG: æ­£åœ¨å¤„ç†æ•°æ®: abc
+2026-01-13 15:00:45 ERROR: å¤„ç†è¿‡ç¨‹ä¸­å‘ç”Ÿä¸¥é‡é”™è¯¯
+Traceback (most recent call last):
+  File "C:\Users\asta1\PycharmProjects\ai-ops\app.py", line 33, in main
+    result = process_data(item)
+             ^^^^^^^^^^^^^^^^^^
+  File "C:\Users\asta1\PycharmProjects\ai-ops\app.py", line 17, in process_data
+    return int(data)
+           ^^^^^^^^^
+ValueError: invalid literal for int() with base 10: 'abc'
+2026-01-13 15:31:19 INFO: æœåŠ¡å·²å¯åŠ¨ - v1.0.0
+2026-01-13 15:31:20 INFO: åˆå§‹åŒ–ç»„ä»¶æˆåŠŸ
+2026-01-13 15:31:20 INFO: å¼€å§‹å¤„ç†é¡¹ç›®: 100
+2026-01-13 15:31:20 DEBUG: æ­£åœ¨å¤„ç†æ•°æ®: 100
+2026-01-13 15:31:20 INFO: é¡¹ç›®å¤„ç†æˆåŠŸ: 100
+2026-01-13 15:31:20 INFO: å¼€å§‹å¤„ç†é¡¹ç›®: 200
+2026-01-13 15:31:21 DEBUG: æ­£åœ¨å¤„ç†æ•°æ®: 200
+2026-01-13 15:31:21 INFO: é¡¹ç›®å¤„ç†æˆåŠŸ: 200
+2026-01-13 15:31:21 INFO: å¼€å§‹å¤„ç†é¡¹ç›®: abc
+2026-01-13 15:31:21 DEBUG: æ­£åœ¨å¤„ç†æ•°æ®: abc
+2026-01-13 15:31:21 ERROR: å¤„ç†è¿‡ç¨‹ä¸­å‘ç”Ÿä¸¥é‡é”™è¯¯
+Traceback (most recent call last):
+  File "C:\Users\asta1\PycharmProjects\ai-ops\app.py", line 33, in main
+    result = process_data(item)
+             ^^^^^^^^^^^^^^^^^^
+  File "C:\Users\asta1\PycharmProjects\ai-ops\app.py", line 17, in process_data
+    return int(data)
+           ^^^^^^^^^
+ValueError: invalid literal for int() with base 10: 'abc'
+2026-01-13 15:33:57 INFO: æœåŠ¡å·²å¯åŠ¨ - v1.0.0
+2026-01-13 15:33:58 INFO: åˆå§‹åŒ–ç»„ä»¶æˆåŠŸ
+2026-01-13 15:33:58 INFO: å¼€å§‹å¤„ç†é¡¹ç›®: 100
+2026-01-13 15:33:58 DEBUG: æ­£åœ¨å¤„ç†æ•°æ®: 100
+2026-01-13 15:33:58 INFO: é¡¹ç›®å¤„ç†æˆåŠŸ: 100
+2026-01-13 15:33:58 INFO: å¼€å§‹å¤„ç†é¡¹ç›®: 200
+2026-01-13 15:33:59 DEBUG: æ­£åœ¨å¤„ç†æ•°æ®: 200
+2026-01-13 15:33:59 INFO: é¡¹ç›®å¤„ç†æˆåŠŸ: 200
+2026-01-13 15:33:59 INFO: å¼€å§‹å¤„ç†é¡¹ç›®: abc
+2026-01-13 15:33:59 DEBUG: æ­£åœ¨å¤„ç†æ•°æ®: abc
+2026-01-13 15:33:59 ERROR: å¤„ç†è¿‡ç¨‹ä¸­å‘ç”Ÿä¸¥é‡é”™è¯¯
+Traceback (most recent call last):
+  File "C:\Users\asta1\PycharmProjects\ai-ops\app.py", line 33, in main
+    result = process_data(item)
+             ^^^^^^^^^^^^^^^^^^
+  File "C:\Users\asta1\PycharmProjects\ai-ops\app.py", line 17, in process_data
+    return int(data)
+           ^^^^^^^^^
+ValueError: invalid literal for int() with base 10: 'abc'
