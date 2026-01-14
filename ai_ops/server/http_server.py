@@ -51,7 +51,7 @@ class TaskRunner:
         self.workspace = WorkspaceManager()
         self._start_workers()
 
-    def submit(self, repo_url, error_content, code_host=None):
+    def submit(self, event):
         task_id = str(uuid.uuid4())
         with self.lock:
             self.tasks[task_id] = {
@@ -61,11 +61,9 @@ class TaskRunner:
             }
         self.queue.put(
             {
-                "kind": "ERROR",
+                "kind": "EVENT",
                 "task_id": task_id,
-                "repo_url": repo_url,
-                "error_content": error_content,
-                "code_host": code_host,
+                "event": event,
             }
         )
         return task_id
@@ -112,9 +110,18 @@ class TaskRunner:
         if kind == "PR_COMMENT":
             return self._run_pr_comment_job(job)
         task_id = job["task_id"]
-        repo_url = job["repo_url"]
-        error_content = job["error_content"]
-        code_host = (job.get("code_host") or config.CODE_HOST).strip().lower()
+        event = job.get("event") or {}
+        repo = event.get("repo") or {}
+        err = event.get("error") or {}
+        repo_url = (repo.get("repo_url") or "").strip()
+        code_host = (repo.get("code_host") or config.CODE_HOST).strip().lower()
+        raw_excerpt = err.get("raw_excerpt") or ""
+        ex = (err.get("exception_type") or "").strip()
+        msg = (err.get("message_key") or "").strip()
+        if raw_excerpt:
+            error_content = raw_excerpt
+        else:
+            error_content = (ex + "\n" + msg).strip()
 
         with self.lock:
             self.tasks[task_id]["status"] = "RUNNING"
@@ -253,19 +260,48 @@ class ApiHandler(BaseHTTPRequestHandler):
                 self._send_json(401, {"error": "unauthorized"})
                 return
             body = self._read_json()
-            repo_url = (body.get("repo_url") or "").strip()
-            error_content = body.get("error_content") or ""
-            code_host = body.get("code_host")
+            if not isinstance(body, dict):
+                self._send_json(400, {"error": "invalid_json"})
+                return
+            schema_version = (body.get("schema_version") or "").strip()
+            event_id = (body.get("event_id") or "").strip()
+            occurred_at = body.get("occurred_at")
+            repo = body.get("repo") or {}
+            err = body.get("error") or {}
+            repo_url = (repo.get("repo_url") or "").strip()
+            code_host = (repo.get("code_host") or "").strip().lower()
+            raw_excerpt = err.get("raw_excerpt") or ""
+            ex = (err.get("exception_type") or "").strip()
+            msg = (err.get("message_key") or "").strip()
+            fp = (err.get("fingerprint") or "").strip()
+            frames = err.get("frames")
+            if schema_version != "1.0":
+                self._send_json(400, {"error": "schema_version_required", "expected": "1.0"})
+                return
+            if not event_id:
+                self._send_json(400, {"error": "event_id_required"})
+                return
+            if not isinstance(occurred_at, int):
+                self._send_json(400, {"error": "occurred_at_required_int"})
+                return
             if not repo_url:
                 self._send_json(400, {"error": "repo_url_required"})
                 return
-            if not str(error_content).strip():
-                self._send_json(400, {"error": "error_content_required"})
+            if not code_host:
+                self._send_json(400, {"error": "code_host_required"})
                 return
-            task_id = self.runner.submit(repo_url, str(error_content), code_host=code_host)
+            if not (raw_excerpt or ex or msg):
+                self._send_json(400, {"error": "error_required"})
+                return
+            if not fp:
+                self._send_json(400, {"error": "fingerprint_required"})
+                return
+            if frames is not None and not isinstance(frames, list):
+                self._send_json(400, {"error": "frames_must_be_list"})
+                return
+            task_id = self.runner.submit(body)
             self._send_json(200, {"task_id": task_id})
             return
-
         if path == "/v1/pr-comments":
             if not self._check_auth():
                 self._send_json(401, {"error": "unauthorized"})

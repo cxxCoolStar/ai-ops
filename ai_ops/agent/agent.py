@@ -3,9 +3,11 @@ import json
 import os
 import time
 import urllib.request
+import uuid
+import re
+import hashlib
 
 from ai_ops import config
-from ai_ops.core.orchestrator import build_error_signature
 from ai_ops.monitoring.log_monitor import start_monitoring
 
 
@@ -23,24 +25,92 @@ def _post_json(url, payload, api_key=None, timeout=15):
     return json.loads(raw) if raw else {}
 
 
+def _normalize_for_key(text):
+    s = (text or "").replace("\r\n", "\n").replace("\r", "\n")
+    s = re.sub(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", "<uuid>", s, flags=re.IGNORECASE)
+    s = re.sub(r"\b0x[0-9a-f]+\b", "<hex>", s, flags=re.IGNORECASE)
+    s = re.sub(r"\b\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?\b", "<ts>", s)
+    s = re.sub(r"[A-Za-z]:\\\\[^\s\"']+", "<path>", s)
+    s = re.sub(r"(/[^ \n\t\"']+)+", "<path>", s)
+    s = re.sub(r"\b\d{3,}\b", "<num>", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+
+def _extract_exception_message(text):
+    lines = [ln.strip() for ln in (text or "").splitlines() if ln.strip()]
+    for ln in reversed(lines[-20:]):
+        m = re.match(r"^([A-Za-z_][A-Za-z0-9_]*(?:Error|Exception))\s*:\s*(.*)$", ln)
+        if m:
+            return m.group(1), (m.group(2) or "").strip()
+    return "", ""
+
+
+def _extract_frames(text, limit=8):
+    frames = []
+    pattern = re.compile(r'File\s+"([^"]+)",\s+line\s+(\d+),\s+in\s+([A-Za-z_][A-Za-z0-9_]*)')
+    for m in pattern.finditer(text or ""):
+        file_path = m.group(1) or ""
+        func = m.group(3) or ""
+        file_name = os.path.basename(file_path.replace("\\", "/"))
+        if not file_name:
+            continue
+        frames.append({"file": file_name, "function": func})
+        if len(frames) >= int(limit):
+            break
+    return frames
+
+
+def _fingerprint(exception_type, message_key, frames):
+    basis = "\n".join(
+        [
+            (exception_type or "").strip().lower(),
+            (message_key or "").strip(),
+            " ".join(f"{f.get('file')}:{f.get('function')}" for f in (frames or []) if f.get("file")),
+        ]
+    ).strip()
+    if not basis:
+        return ""
+    return hashlib.sha256(basis.encode("utf-8", errors="ignore")).hexdigest()
+
+
 def run_agent(args):
     server_base = (args.server_url or config.AGENT_SERVER_URL).rstrip("/")
     endpoint = f"{server_base}/v1/tasks"
     last_seen = {}
 
     def on_error(full_error):
-        signature = build_error_signature(full_error)
-        if signature:
+        exception_type, message = _extract_exception_message(full_error)
+        message_key = _normalize_for_key(message)[:160] if message else ""
+        frames = _extract_frames(full_error, limit=8)
+        fp = _fingerprint(exception_type, message_key, frames)
+        if fp:
             now = time.time()
-            last_ts = last_seen.get(signature, 0.0)
+            last_ts = last_seen.get(fp, 0.0)
             if (now - last_ts) < args.dedup_window_seconds:
                 return
-            last_seen[signature] = now
+            last_seen[fp] = now
 
         payload = {
-            "repo_url": args.repo_url,
-            "error_content": full_error,
-            "code_host": args.code_host,
+            "schema_version": "1.0",
+            "event_id": str(uuid.uuid4()),
+            "occurred_at": int(time.time()),
+            "repo": {
+                "repo_url": args.repo_url,
+                "code_host": (args.code_host or "gitlab").strip().lower(),
+                "default_branch": args.default_branch,
+            },
+            "service": {
+                "name": args.service_name,
+                "environment": args.environment,
+            },
+            "error": {
+                "exception_type": exception_type,
+                "message_key": message_key,
+                "fingerprint": fp,
+                "frames": frames,
+                "raw_excerpt": (full_error or "")[:20000],
+            },
         }
         resp = _post_json(endpoint, payload, api_key=args.api_key, timeout=args.http_timeout_seconds)
         task_id = resp.get("task_id")
@@ -70,6 +140,9 @@ def parse_args():
     p.add_argument("--repo-url", required=True)
     p.add_argument("--server-url", default=None)
     p.add_argument("--code-host", default="gitlab")
+    p.add_argument("--default-branch", default="main")
+    p.add_argument("--service-name", default=os.getenv("SERVICE_NAME", "app"))
+    p.add_argument("--environment", default=os.getenv("ENVIRONMENT", "dev"))
     p.add_argument("--api-key", default=os.getenv("AGENT_API_KEY"))
     p.add_argument("--dedup-window-seconds", type=int, default=3600)
     p.add_argument("--http-timeout-seconds", type=int, default=15)
@@ -78,4 +151,3 @@ def parse_args():
 
 if __name__ == "__main__":
     run_agent(parse_args())
-

@@ -441,8 +441,18 @@ class TraceStore:
 
     def _fts_query_tokens(self, exception_type, normalized_query):
         base = f"{exception_type or ''} {normalized_query or ''}".strip()
-        base = re.sub(r"[^\w<>\-: ]+", " ", base)
-        tokens = [t for t in base.split() if t and t not in ("<ts>", "<uuid>", "<hex>", "<path>", "<num>", "<str>")]
+        base = base.replace(":", " ").replace("/", " ").replace("\\", " ")
+        base = re.sub(r"[^\w<> ]+", " ", base)
+        raw_tokens = [t for t in base.split() if t]
+        tokens = []
+        for t in raw_tokens:
+            if t in ("<ts>", "<uuid>", "<hex>", "<path>", "<num>", "<str>"):
+                continue
+            if t.isdigit():
+                continue
+            if len(t) <= 1:
+                continue
+            tokens.append(t)
         if len(tokens) > 16:
             tokens = tokens[:16]
         return tokens
