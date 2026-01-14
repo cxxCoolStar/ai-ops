@@ -1,5 +1,6 @@
 import os
 import time
+import threading
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 import config
@@ -9,7 +10,13 @@ class LogFileHandler(FileSystemEventHandler):
         self.file_path = os.path.abspath(file_path)
         self.callback = callback
         self.last_position = self._get_file_size()
+        self.debounce_seconds = getattr(config, "DEBOUNCE_SECONDS", 2.0)
+        self._buffer_lines = []
+        self._armed = False
+        self._last_update_ts = 0.0
+        self._lock = threading.Lock()
         print(f"开始监控文件: {self.file_path}, 当前指针: {self.last_position}")
+        self._start_flush_loop()
 
     def _get_file_size(self):
         if os.path.exists(self.file_path):
@@ -17,7 +24,7 @@ class LogFileHandler(FileSystemEventHandler):
         return 0
 
     def on_modified(self, event):
-        if event.src_path == self.file_path:
+        if os.path.abspath(event.src_path) == self.file_path:
             self._process_new_lines()
 
     def _process_new_lines(self):
@@ -26,6 +33,10 @@ class LogFileHandler(FileSystemEventHandler):
             # 文件被清空或截断
             print("日志文件被截断，重置指针")
             self.last_position = 0
+            with self._lock:
+                self._buffer_lines = []
+                self._armed = False
+                self._last_update_ts = 0.0
 
         if current_size > self.last_position:
             with open(self.file_path, 'r', encoding='utf-8', errors='ignore') as f:
@@ -36,20 +47,39 @@ class LogFileHandler(FileSystemEventHandler):
                 self._check_for_errors(new_lines)
 
     def _check_for_errors(self, lines):
-        # 简单策略：只要这批新日志里有 Error，就把这批（以及可能的上下文）都发过去
-        # 改进：如果 Error 位于最后一行，可能 Traceback 还没写完，这里暂时简化处理：
-        # 只要发现关键词，就将整块 capture 下来。
-        
-        found_error = False
-        for line in lines:
-            if any(kw in line for kw in config.KEYWORDS):
-                found_error = True
-                print(f"检测到关键词: {line.strip()}")
-                break # 只要发现这一批里有错误，就全部发送，保留完整上下文
-        
-        if found_error:
-            # 将所有读取到的新行合并，作为错误上下文
-            full_error = "".join(lines)
+        if not lines:
+            return
+
+        with self._lock:
+            self._buffer_lines.extend(lines)
+            for line in lines:
+                if any(kw in line for kw in config.KEYWORDS):
+                    self._armed = True
+                    self._last_update_ts = time.time()
+                    print(f"检测到关键词: {line.strip()}")
+                    break
+
+    def _start_flush_loop(self):
+        def loop():
+            while True:
+                time.sleep(0.2)
+                self._flush_if_ready()
+
+        thread = threading.Thread(target=loop, daemon=True)
+        thread.start()
+
+    def _flush_if_ready(self):
+        with self._lock:
+            if not self._armed:
+                return
+            if (time.time() - self._last_update_ts) < self.debounce_seconds:
+                return
+            full_error = "".join(self._buffer_lines)
+            self._buffer_lines = []
+            self._armed = False
+            self._last_update_ts = 0.0
+
+        if full_error.strip():
             self.callback(full_error)
 
 def start_monitoring(file_path, callback):

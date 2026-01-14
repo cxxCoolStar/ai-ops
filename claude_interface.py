@@ -1,5 +1,5 @@
-import os
 import subprocess
+import re
 import config
 
 class ClaudeInterface:
@@ -18,19 +18,43 @@ class ClaudeInterface:
         
         # 使用 -y 开启自动运行模式（如果支持），或者直接传递指令
         # 假设 claude CLI 支持接收 prompt 并自动处理
-        try:
-            print(f"正在执行代理式修复 (Command: {self.claude_cmd})...")
-            # 注意：某些版本的 claude CLI 可能需要特定的非交互模式参数，如 '-y'
-            # 这里先按用户指令集成的逻辑：直接调用
-            result = subprocess.run(
-                [self.claude_cmd, prompt],
-                capture_output=True,
-                text=True,
-                encoding='utf-8'
-            )
-            return result.stdout
-        except Exception as e:
-            return f"代理修复执行异常: {e}"
+        print(f"正在执行代理式修复 (Command: {self.claude_cmd})...")
+        result = subprocess.run(
+            [self.claude_cmd, prompt],
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            check=True
+        )
+        return result.stdout
+
+    def propose_fix_code_blocks(self, error_content):
+        prompt = (
+            "你是一个资深 Python 工程师。请根据下面的错误日志，在当前项目中给出修复方案。\n"
+            "要求：\n"
+            "1) 只输出一个或多个 <code_block filename=\"...\">...</code_block>，不要输出任何其它文字。\n"
+            "2) 每个 code_block 的内容必须是对应文件的完整内容（不是 diff，也不是片段）。\n"
+            "3) filename 使用相对路径，只能指向当前项目内已存在的文件。\n"
+            "4) 修复应尽量最小化改动，并保证代码可运行。\n\n"
+            f"错误日志如下：\n{error_content}\n"
+        )
+
+        result = subprocess.run(
+            [self.claude_cmd, prompt],
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            check=True
+        )
+        blocks = self._parse_code_blocks(result.stdout)
+        if not blocks:
+            raise ValueError("Claude 未返回任何 code_block。")
+        return blocks
+
+    def _parse_code_blocks(self, text):
+        pattern = r'<code_block\s+filename="([^"]+)">\s*([\s\S]*?)\s*</code_block>'
+        matches = re.findall(pattern, text or "", flags=re.IGNORECASE)
+        return [(filename.strip(), content) for filename, content in matches if filename.strip()]
 
     def get_structured_summary(self, error_content):
         """
@@ -45,16 +69,14 @@ class ClaudeInterface:
             "请直接输出这三个章节的内容，不要包含其他闲聊。"
         )
         
-        try:
-            result = subprocess.run(
-                [self.claude_cmd, prompt],
-                capture_output=True,
-                text=True,
-                encoding='utf-8'
-            )
-            return result.stdout
-        except Exception as e:
-            return f"获取分析摘要失败: {e}"
+        result = subprocess.run(
+            [self.claude_cmd, prompt],
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            check=True
+        )
+        return result.stdout
 
 if __name__ == "__main__":
     # 模拟测试

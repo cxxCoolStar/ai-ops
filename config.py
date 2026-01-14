@@ -16,6 +16,9 @@ RECEIVER_EMAIL = os.getenv("RECEIVER_EMAIL")
 # 日志监控配置
 LOG_FILE_PATH = os.getenv("LOG_FILE_PATH", "app.log")
 KEYWORDS = os.getenv("KEYWORDS", "ERROR,Exception,CRITICAL").split(",")
+DEBOUNCE_SECONDS = float(os.getenv("DEBOUNCE_SECONDS", "2"))
+DEDUP_WINDOW_SECONDS = int(os.getenv("DEDUP_WINDOW_SECONDS", "3600"))
+MAX_ERROR_QUEUE_SIZE = int(os.getenv("MAX_ERROR_QUEUE_SIZE", "100"))
 
 # Claude 配置
 CLAUDE_COMMAND = os.getenv("CLAUDE_COMMAND", "claude")
