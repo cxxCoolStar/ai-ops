@@ -13,17 +13,8 @@ logging.basicConfig(
 
 def process_data(data):
     logging.debug(f"正在处理数据: {data}")
-    try:
-        # 尝试将数据转换为整数
-        return int(data)
-    except ValueError as e:
-        # 记录错误并返回 None，而不是抛出异常
-        logging.warning(f"无法将数据 '{data}' 转换为整数: {e}")
-        return None
-    except TypeError as e:
-        # 处理其他类型错误
-        logging.warning(f"数据类型错误: {e}")
-        return None
+    # 故意抛出异常: ValueError: invalid literal for int()
+    return int(data)
 
 def main():
     logging.info("服务已启动 - v1.0.0")
@@ -38,12 +29,9 @@ def main():
         items = ["100", "200", "abc", "300"]
         for item in items:
             logging.info(f"开始处理项目: {item}")
-            time.sleep(0.5)
+            time.sleep(1)
             result = process_data(item)
-            
-            # 只在成功时记录
-            if result is not None:
-                logging.info(f"项目处理成功: {result}")
+            logging.info(f"项目处理成功: {result}")
             
     except Exception as e:
         # 使用 exc_info=True 记录完整的堆栈信息
