@@ -8,6 +8,8 @@ from log_monitor import start_monitoring
 from claude_interface import ClaudeInterface
 from email_service import EmailSender
 from github_service import GitHubService
+from gitlab_service import GitLabService
+from trace_store import TraceStore, StepScope
 
 def _require_non_empty(name, value):
     if value is None:
@@ -17,39 +19,70 @@ def _require_non_empty(name, value):
     return value
 
 class AutoRepairOrchestrator:
-    def __init__(self, claude, email, github):
+    def __init__(self, claude, email, code_host, repo_root=None, trace_store=None, code_host_name=None):
         self.claude = claude
         self.email = email
-        self.github = github
+        self.code_host = code_host
+        self.repo_root = os.path.abspath(repo_root or os.getcwd())
+        self.trace_store = trace_store
+        self.code_host_name = (code_host_name or config.CODE_HOST or "").strip().lower()
 
-    def handle_error(self, error_content):
+    def handle_error(self, error_content, repo_url=None, trace_id=None):
         print("\n[!] 检测到错误，开始代理式自动修复流程...")
 
         _require_non_empty("SMTP_USER", config.SMTP_USER)
         _require_non_empty("SMTP_PASSWORD", config.SMTP_PASSWORD)
         _require_non_empty("RECEIVER_EMAIL", config.RECEIVER_EMAIL)
-        _require_non_empty("GITHUB_TOKEN", config.GITHUB_TOKEN)
-        _require_non_empty("GITHUB_REPO", config.GITHUB_REPO)
         _require_non_empty("CLAUDE_COMMAND", config.CLAUDE_COMMAND)
+        if self.code_host_name == "gitlab":
+            _require_non_empty("GITLAB_TOKEN", config.GITLAB_TOKEN)
+            _require_non_empty("GITLAB_PROJECT", config.GITLAB_PROJECT)
+            _require_non_empty("GITLAB_BASE_URL", config.GITLAB_BASE_URL)
+        elif self.code_host_name == "github":
+            _require_non_empty("GITHUB_TOKEN", config.GITHUB_TOKEN)
+            _require_non_empty("GITHUB_REPO", config.GITHUB_REPO)
+        else:
+            raise ValueError(f"Unsupported CODE_HOST: {self.code_host_name}")
 
-        print("正在准备 GitHub 修复分支...")
-        branch_name = self.github.create_fix_branch("agentic-fix")
+        signature = _build_error_signature(error_content)
+        if self.trace_store:
+            if not trace_id:
+                trace_id = self.trace_store.new_trace_id()
+                self.trace_store.create_trace(
+                    trace_id=trace_id,
+                    repo_url=repo_url or "",
+                    code_host=self.code_host_name,
+                    error_signature=signature,
+                    error_excerpt=(error_content or "")[:2000],
+                )
+
+        print("正在准备修复分支...")
+        with self._step(trace_id, "CREATE_FIX_BRANCH"):
+            branch_name = self.code_host.create_fix_branch("agentic-fix")
 
         print("正在向 Claude 请求结构化修复方案（code_block 输出）...")
-        blocks = self.claude.propose_fix_code_blocks(error_content)
+        with self._step(trace_id, "AI_PROPOSE_PATCH"):
+            blocks = self.claude.propose_fix_code_blocks(error_content)
 
         print("正在应用 Claude 提供的文件变更...")
-        self._apply_code_blocks(blocks)
+        with self._step(trace_id, "APPLY_PATCH"):
+            self._apply_code_blocks(blocks)
 
         print("正在运行提交前检查...")
-        self._run_preflight_checks()
+        with self._step(trace_id, "PREFLIGHT_CHECK"):
+            self._run_preflight_checks()
 
         print("正在生成 PR 报告总结 (原因、过程、结论)...")
-        analysis = self.claude.get_structured_summary(error_content)
+        with self._step(trace_id, "AI_SUMMARY"):
+            analysis = self.claude.get_structured_summary(error_content)
 
         print("正在提交修复代码并创建 PR...")
         commit_msg = f"fix(ai): agentic auto-repair for detected error\n\nLog: {error_content[:100]}..."
-        self.github.commit_and_push(branch_name, commit_msg)
+        commit_sha = ""
+        with self._step(trace_id, "GIT_COMMIT_PUSH"):
+            self.code_host.commit_and_push(branch_name, commit_msg)
+            if hasattr(self.code_host, "git") and hasattr(self.code_host.git, "current_commit"):
+                commit_sha = self.code_host.git.current_commit()
 
         pr_title = "🛠️ [AI Agentic Fix] 修复系统路径错误"
         pr_body = f"""# 🤖 AI 代理式自动修复报告
@@ -64,17 +97,28 @@ class AutoRepairOrchestrator:
 
 *由 [AI-Ops] 系统自动生成并提交。*
 """
-        pr_url = self.github.create_pull_request(branch_name, pr_title, pr_body)
-        print(f"PR 已创建: {pr_url}")
+        with self._step(trace_id, "CREATE_PR"):
+            pr_url = self.code_host.create_pull_request(branch_name, pr_title, pr_body)
+            print(f"PR 已创建: {pr_url}")
 
         print("正在发送 HTML 修复报告邮件...")
         subject = "🛠️ AI 自动修复完成：PR 已提交"
         html_content = self._build_email_html(error_content, analysis, pr_url)
-        self.email.send_email(subject, html_content, is_html=True)
+        with self._step(trace_id, "NOTIFY"):
+            self.email.send_email(subject, html_content, is_html=True)
 
-        self.github.clean_up("main")
+        with self._step(trace_id, "CLEANUP"):
+            self.code_host.clean_up("main")
         print("本次代理修复流程圆满完成。")
+
+        if self.trace_store:
+            self.trace_store.finish_trace_ok(trace_id, pr_url, commit_sha)
         return pr_url
+
+    def _step(self, trace_id, step_name):
+        if not self.trace_store or not trace_id:
+            return _NullScope()
+        return StepScope(self.trace_store, trace_id, step_name)
 
     def _run_preflight_checks(self):
         subprocess.run(
@@ -82,13 +126,13 @@ class AutoRepairOrchestrator:
             capture_output=True,
             text=True,
             encoding="utf-8",
+            cwd=self.repo_root,
             check=True
         )
 
     def _apply_code_blocks(self, blocks):
-        repo_root = os.path.abspath(os.getcwd())
         for rel_path, content in blocks:
-            abs_path = self._safe_abs_path(repo_root, rel_path)
+            abs_path = self._safe_abs_path(self.repo_root, rel_path)
             if not os.path.exists(abs_path):
                 raise ValueError(f"Claude 返回了不存在的文件路径: {rel_path}")
             with open(abs_path, "w", encoding="utf-8", newline="") as f:
@@ -136,6 +180,13 @@ class AutoRepairOrchestrator:
         </html>
         """
 
+class _NullScope:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
 def _build_error_signature(error_content):
     content = (error_content or "").strip()
     if not content:
@@ -150,8 +201,21 @@ def main():
     # 初始化组件
     claude = ClaudeInterface()
     email = EmailSender()
-    github = GitHubService()
-    orchestrator = AutoRepairOrchestrator(claude=claude, email=email, github=github)
+    if config.CODE_HOST == "gitlab":
+        code_host = GitLabService(cwd=os.getcwd())
+    elif config.CODE_HOST == "github":
+        code_host = GitHubService(cwd=os.getcwd())
+    else:
+        raise ValueError(f"Unsupported CODE_HOST: {config.CODE_HOST}")
+    trace_store = TraceStore(config.TRACE_DB_PATH)
+    orchestrator = AutoRepairOrchestrator(
+        claude=claude,
+        email=email,
+        code_host=code_host,
+        repo_root=os.getcwd(),
+        trace_store=trace_store,
+        code_host_name=config.CODE_HOST,
+    )
     
     # 确保日志文件存在
     log_path = os.path.abspath(config.LOG_FILE_PATH)
@@ -182,7 +246,7 @@ def main():
                 if (now - last_ts) < dedup_window_seconds:
                     continue
                 last_seen[signature] = now
-            orchestrator.handle_error(error_content)
+            orchestrator.handle_error(error_content, repo_url="")
     except KeyboardInterrupt:
         print("\n正在停止系统...")
         observer.stop()

@@ -1,39 +1,26 @@
-import os
-import subprocess
 import time
 from github import Github
 import config
+from git_service import GitService
 
 class GitHubService:
-    def __init__(self):
+    def __init__(self, cwd=None):
         self.token = config.GITHUB_TOKEN
         self.repo_name = config.GITHUB_REPO
         self.gh = Github(self.token) if self.token else None
-
-    def _run_git(self, args):
-        result = subprocess.run(
-            ["git"] + args,
-            capture_output=True,
-            text=True,
-            encoding='utf-8',
-            cwd=os.getcwd(),
-            check=True
-        )
-        return result
+        self.git = GitService(cwd=cwd)
 
     def create_fix_branch(self, error_type):
         timestamp = int(time.time())
         branch_name = f"fix/{error_type.lower().replace(' ', '-')}-{timestamp}"
-        
-        # 确保回到主分支或基础分支 (假设为 master 或 main)
-        # 这里简单处理，直接从当前分支切新分支
-        self._run_git(["checkout", "-b", branch_name])
+
+        self.git.checkout_new_branch(branch_name)
         return branch_name
 
     def commit_and_push(self, branch_name, commit_message):
-        self._run_git(["add", "."])
-        self._run_git(["commit", "-m", commit_message])
-        self._run_git(["push", "origin", branch_name])
+        self.git.add_all()
+        self.git.commit(commit_message)
+        self.git.push("origin", branch_name)
 
     def create_pull_request(self, branch_name, title, body):
         if not self.gh:
@@ -52,8 +39,7 @@ class GitHubService:
         return pr.html_url
 
     def clean_up(self, base_branch="main"):
-        # 切换回主分支并拉取最新代码（可选）
-        self._run_git(["checkout", base_branch])
+        self.git.checkout(base_branch)
 
 if __name__ == "__main__":
     pass
