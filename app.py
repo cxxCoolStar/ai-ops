@@ -13,7 +13,11 @@ logging.basicConfig(
 
 def process_data(data):
     logging.debug(f"正在处理数据: {data}")
-    return int(data)
+    try:
+        return int(data)
+    except ValueError:
+        logging.warning(f"无法将数据 '{data}' 转换为整数，跳过该项")
+        return None
 
 
 def main():
@@ -29,7 +33,8 @@ def main():
             logging.info(f"开始处理项目: {item}")
             time.sleep(1)
             result = process_data(item)
-            logging.info(f"项目处理成功: {result}")
+            if result is not None:
+                logging.info(f"项目处理成功: {result}")
     except Exception as e:
         logging.error("处理过程中发生严重错误", exc_info=True)
         print(f"发生错误: {e}")
@@ -37,4 +42,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
