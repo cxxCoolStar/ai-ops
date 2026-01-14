@@ -1,0 +1,19 @@
+2026-01-14 14:16:07 INFO: 服务已启动 - v1.0.0
+2026-01-14 14:16:08 INFO: 初始化组件成功
+2026-01-14 14:16:08 INFO: 开始处理项目: 100
+2026-01-14 14:16:09 DEBUG: 正在处理数据: 100
+2026-01-14 14:16:09 INFO: 项目处理成功: 100
+2026-01-14 14:16:09 INFO: 开始处理项目: 200
+2026-01-14 14:16:10 DEBUG: 正在处理数据: 200
+2026-01-14 14:16:10 INFO: 项目处理成功: 200
+2026-01-14 14:16:10 INFO: 开始处理项目: abc
+2026-01-14 14:16:11 DEBUG: 正在处理数据: abc
+2026-01-14 14:16:11 ERROR: 处理过程中发生严重错误
+Traceback (most recent call last):
+  File "C:\Users\asta1\PycharmProjects\ai-ops-example\app.py", line 31, in main
+    result = process_data(item)
+             ^^^^^^^^^^^^^^^^^^
+  File "C:\Users\asta1\PycharmProjects\ai-ops-example\app.py", line 16, in process_data
+    return int(data)
+           ^^^^^^^^^
+ValueError: invalid literal for int() with base 10: 'abc'
