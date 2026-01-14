@@ -1,3 +1,6 @@
 .env
 /__pycache__
 app.log
+/workspaces
+/data
+/nul
