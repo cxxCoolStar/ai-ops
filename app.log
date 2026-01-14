@@ -102,3 +102,55 @@ Traceback (most recent call last):
     return int(data)
            ^^^^^^^^^
 ValueError: invalid literal for int() with base 10: 'abc'
+2026-01-14 09:52:04 INFO: 服务已启动 - v1.0.0
+2026-01-14 09:52:05 INFO: 初始化组件成功
+2026-01-14 09:52:05 INFO: 开始处理项目: 100
+2026-01-14 09:52:05 DEBUG: 正在处理数据: 100
+2026-01-14 09:52:05 INFO: 项目处理成功: 100
+2026-01-14 09:52:05 INFO: 开始处理项目: 200
+2026-01-14 09:52:06 DEBUG: 正在处理数据: 200
+2026-01-14 09:52:06 INFO: 项目处理成功: 200
+2026-01-14 09:52:06 INFO: 开始处理项目: abc
+2026-01-14 09:52:06 DEBUG: 正在处理数据: abc
+2026-01-14 09:52:06 WARNING: 无法将数据 'abc' 转换为整数: invalid literal for int() with base 10: 'abc'
+2026-01-14 09:52:06 INFO: 开始处理项目: 300
+2026-01-14 09:52:07 DEBUG: 正在处理数据: 300
+2026-01-14 09:52:07 INFO: 项目处理成功: 300
+2026-01-14 09:53:22 INFO: 服务已启动 - v1.0.0
+2026-01-14 09:53:23 INFO: 初始化组件成功
+2026-01-14 09:53:23 INFO: 开始处理项目: 100
+2026-01-14 09:53:23 DEBUG: 正在处理数据: 100
+2026-01-14 09:53:23 INFO: 项目处理成功: 100
+2026-01-14 09:53:23 INFO: 开始处理项目: 200
+2026-01-14 09:53:24 DEBUG: 正在处理数据: 200
+2026-01-14 09:53:24 INFO: 项目处理成功: 200
+2026-01-14 09:53:24 INFO: 开始处理项目: abc
+2026-01-14 09:53:24 DEBUG: 正在处理数据: abc
+2026-01-14 09:53:24 ERROR: 处理过程中发生严重错误
+Traceback (most recent call last):
+  File "C:\Users\asta1\PycharmProjects\ai-ops\app.py", line 33, in main
+    result = process_data(item)
+             ^^^^^^^^^^^^^^^^^^
+  File "C:\Users\asta1\PycharmProjects\ai-ops\app.py", line 17, in process_data
+    return int(data)
+           ^^^^^^^^^
+ValueError: invalid literal for int() with base 10: 'abc'
+2026-01-14 10:03:41 INFO: 服务已启动 - v1.0.0
+2026-01-14 10:03:42 INFO: 初始化组件成功
+2026-01-14 10:03:42 INFO: 开始处理项目: 100
+2026-01-14 10:03:42 DEBUG: 正在处理数据: 100
+2026-01-14 10:03:42 INFO: 项目处理成功: 100
+2026-01-14 10:03:42 INFO: 开始处理项目: 200
+2026-01-14 10:03:43 DEBUG: 正在处理数据: 200
+2026-01-14 10:03:43 INFO: 项目处理成功: 200
+2026-01-14 10:03:43 INFO: 开始处理项目: abc
+2026-01-14 10:03:43 DEBUG: 正在处理数据: abc
+2026-01-14 10:03:43 ERROR: 处理过程中发生严重错误
+Traceback (most recent call last):
+  File "C:\Users\asta1\PycharmProjects\ai-ops\app.py", line 33, in main
+    result = process_data(item)
+             ^^^^^^^^^^^^^^^^^^
+  File "C:\Users\asta1\PycharmProjects\ai-ops\app.py", line 17, in process_data
+    return int(data)
+           ^^^^^^^^^
+ValueError: invalid literal for int() with base 10: 'abc'

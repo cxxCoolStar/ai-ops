@@ -1,3 +1,4 @@
+```python
 import logging
 import time
 import random
@@ -12,17 +13,26 @@ logging.basicConfig(
 )
 
 def process_data(data):
+    """
+    处理数据并转换为整数
+    
+    Args:
+        data: 输入数据，可以是字符串或数字
+        
+    Returns:
+        int: 转换后的整数值，如果转换失败返回 None
+    """
     logging.debug(f"正在处理数据: {data}")
+    
     try:
-        # 尝试将数据转换为整数
-        return int(data)
-    except ValueError as e:
-        # 记录错误并返回 None，而不是抛出异常
-        logging.warning(f"无法将数据 '{data}' 转换为整数: {e}")
-        return None
-    except TypeError as e:
-        # 处理其他类型错误
-        logging.warning(f"数据类型错误: {e}")
+        # 尝试转换为整数
+        result = int(data)
+        logging.info(f"数据转换成功: {data} -> {result}")
+        return result
+        
+    except (ValueError, TypeError) as e:
+        # 处理转换失败的情况
+        logging.error(f"数据转换失败: '{data}' 无法转换为整数 - {type(e).__name__}: {e}")
         return None
 
 def main():
@@ -33,22 +43,29 @@ def main():
     time.sleep(1)
     logging.info("初始化组件成功")
     
-    try:
-        # 模拟业务逻辑
-        items = ["100", "200", "abc", "300"]
-        for item in items:
-            logging.info(f"开始处理项目: {item}")
-            time.sleep(0.5)
-            result = process_data(item)
-            
-            # 只在成功时记录
-            if result is not None:
-                logging.info(f"项目处理成功: {result}")
-            
-    except Exception as e:
-        # 使用 exc_info=True 记录完整的堆栈信息
-        logging.error("处理过程中发生严重错误", exc_info=True)
-        print(f"发生错误: {e}")
+    # 模拟业务逻辑
+    items = ["100", "200", "abc", "300"]
+    success_count = 0
+    failure_count = 0
+    
+    for item in items:
+        logging.info(f"开始处理项目: {item}")
+        time.sleep(0.5)
+        
+        result = process_data(item)
+        
+        if result is not None:
+            logging.info(f"项目处理成功: {result}")
+            success_count += 1
+        else:
+            logging.warning(f"项目处理失败: {item} (无效输入)")
+            failure_count += 1
+    
+    # 输出统计信息
+    logging.info(f"处理完成 - 成功: {success_count}, 失败: {failure_count}")
+    print(f"\n处理完成 - 成功: {success_count}, 失败: {failure_count}")
+    print(f"成功率: {success_count / len(items) * 100:.1f}%")
 
 if __name__ == "__main__":
     main()
+```
