@@ -10,14 +10,15 @@ class EmailSender:
         self.user = config.SMTP_USER
         self.password = config.SMTP_PASSWORD
 
-    def send_email(self, subject, body):
+    def send_email(self, subject, body, is_html=False):
         try:
             msg = MIMEMultipart()
             msg['From'] = self.user
             msg['To'] = config.RECEIVER_EMAIL
             msg['Subject'] = subject
 
-            msg.attach(MIMEText(body, 'plain', 'utf-8'))
+            content_type = 'html' if is_html else 'plain'
+            msg.attach(MIMEText(body, content_type, 'utf-8'))
 
             with smtplib.SMTP(self.server, self.port) as server:
                 server.starttls()
