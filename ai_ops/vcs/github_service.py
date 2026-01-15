@@ -34,20 +34,6 @@ class GitHubService:
         self.git.commit(commit_message)
         self.git.push("origin", branch_name)
 
-    def fetch_pr_branch(self, pr_number):
-        if not self.gh:
-            raise ValueError("GitHub Token not configured.")
-        if not self.repo_name:
-            raise ValueError("GitHub Repo not configured.")
-        pr = self.gh.get_repo(self.repo_name).get_pull(pr_number)
-        branch = pr.head.ref
-        if not branch:
-            raise ValueError("GitHub PR head branch not found.")
-        self._maybe_configure_https_auth()
-        self.git.fetch("origin", branch)
-        self.git.checkout_branch_from_remote(branch, remote="origin")
-        return branch
-
     def create_pull_request(self, branch_name, title, body):
         if not self.gh:
             raise ValueError("GitHub Token not configured.")

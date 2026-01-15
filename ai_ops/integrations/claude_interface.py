@@ -11,16 +11,12 @@ class ClaudeInterface:
         extra = shlex.split(config.CLAUDE_ARGS or "")
         self.cmd = base + extra
 
-    def execute_agentic_fix(self, error_content, cwd=None, reference_context=None):
-        context = (reference_context or "").strip()
-        parts = [
-            "项目中出现了以下运行时错误，请在当前工作目录中定位相关代码并直接进行修复：\n\n",
-            f"{error_content}\n\n",
-        ]
-        if context:
-            parts.append(f"相似问题历史修复参考（优先复用既有解决方式）：\n{context}\n\n")
-        parts.append("修复完成后，请确保代码逻辑正确且不再报错。")
-        prompt = "".join(parts)
+    def execute_agentic_fix(self, error_content, cwd=None):
+        prompt = (
+            f"项目中出现了以下运行时错误，请在当前工作目录中定位相关代码并直接进行修复：\n\n"
+            f"{error_content}\n\n"
+            "修复完成后，请确保代码逻辑正确且不再报错。"
+        )
 
         print(f"正在执行代理式修复 (Command: {' '.join(self.cmd)})...")
         result = subprocess.run(
@@ -33,66 +29,8 @@ class ClaudeInterface:
         )
         return result.stdout
 
-    def execute_agentic_pr_feedback(self, pr_url, feedback, cwd=None, reference_context=None):
-        context = (reference_context or "").strip()
-        parts = [
-            "你是一个资深软件工程师。当前工作目录是一个 Git 仓库。\n"
-            "这个仓库里已经有一个 PR 的修复分支，你需要根据审查意见更新代码。\n\n",
-            f"PR: {pr_url}\n\n",
-            "审查意见如下（可能包含新的需求、边界条件、代码风格建议等）：\n",
-            f"{feedback}\n\n",
-        ]
-        if context:
-            parts.append(f"相似问题历史修复参考（优先复用既有解决方式）：\n{context}\n\n")
-        parts.append(
-            "要求：\n"
-            "1) 请直接在仓库中修改代码以满足审查意见。\n"
-            "2) 修改尽量最小化，但必须完整满足需求。\n"
-            "3) 不要新增不必要的文件。\n"
-            "4) 修改后确保代码可以正常运行。\n"
-        )
-        prompt = "".join(parts)
-        print(f"正在执行 PR 评论驱动更新 (Command: {' '.join(self.cmd)})...")
-        result = subprocess.run(
-            self.cmd + [prompt],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            check=True,
-            cwd=cwd,
-        )
-        return result.stdout
-
-    def propose_pr_feedback_code_blocks(self, pr_url, feedback, reference_context=None):
-        context = (reference_context or "").strip()
-        parts = [
-            "你是一个资深工程师。请根据下面的 PR 审查意见更新当前项目代码。\n"
-            "要求：\n"
-            "1) 只输出一个或多个 <code_block filename=\"...\">...</code_block>，不要输出任何其它文字。\n"
-            "2) 每个 code_block 的内容必须是对应文件的完整内容（不是 diff，也不是片段）。\n"
-            "3) filename 必须是相对仓库根目录的路径，只能指向仓库内已存在的文件。\n"
-            "4) 修改尽量最小化，但必须完整满足需求。\n\n",
-            f"PR: {pr_url}\n\n",
-            f"审查意见：\n{feedback}\n",
-        ]
-        if context:
-            parts.append(f"\n相似问题历史修复参考（优先复用既有解决方式）：\n{context}\n")
-        prompt = "".join(parts)
-        result = subprocess.run(
-            self.cmd + [prompt],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            check=True,
-        )
-        blocks = self._parse_code_blocks(result.stdout)
-        if not blocks:
-            raise ValueError("Claude 未返回任何 code_block。")
-        return blocks
-
-    def propose_fix_code_blocks(self, error_content, reference_context=None):
-        context = (reference_context or "").strip()
-        parts = [
+    def propose_fix_code_blocks(self, error_content):
+        prompt = (
             "你是一个资深 Python 工程师。请根据下面的错误日志，在当前项目中给出修复方案。\n"
             "要求：\n"
             "1) 只输出一个或多个 <code_block filename=\"...\">...</code_block>，不要输出任何其它文字。\n"
@@ -100,12 +38,9 @@ class ClaudeInterface:
             "3) filename 必须是相对仓库根目录的路径，只能指向仓库内已存在的文件。\n"
             "   - 不要包含 workspaces/、repo/、磁盘盘符等运行环境路径前缀。\n"
             "   - 如果不确定目录结构，请优先只写文件名（例如 app.py）。\n"
-            "4) 修复应尽量最小化改动，并保证代码可运行。\n\n",
-            f"错误日志如下：\n{error_content}\n",
-        ]
-        if context:
-            parts.append(f"\n相似问题历史修复参考（优先复用既有解决方式）：\n{context}\n")
-        prompt = "".join(parts)
+            "4) 修复应尽量最小化改动，并保证代码可运行。\n\n"
+            f"错误日志如下：\n{error_content}\n"
+        )
 
         result = subprocess.run(
             self.cmd + [prompt],

@@ -44,18 +44,10 @@ class GitService:
     def push(self, remote, branch_name):
         self.run(["push", remote, branch_name])
 
-    def fetch(self, remote="origin", ref=None):
-        args = ["fetch", remote]
-        if ref:
-            args.append(ref)
-        self.run(args)
-
-    def checkout_branch_from_remote(self, branch_name, remote="origin"):
-        self.run(["checkout", "-B", branch_name, f"{remote}/{branch_name}"])
-
     def set_remote_url(self, remote, url):
         self.run(["remote", "set-url", remote, url])
 
     def current_commit(self):
         result = self.run(["rev-parse", "HEAD"])
         return (result.stdout or "").strip()
+

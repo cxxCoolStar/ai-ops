@@ -63,12 +63,6 @@ class AutoRepairOrchestrator:
                     error_excerpt=(error_content or "")[:2000],
                 )
 
-        reference_context = ""
-        if self.trace_store and repo_url:
-            with self._step(trace_id, "KB_RETRIEVE"):
-                cases = self.trace_store.search_similar_cases(repo_url, error_content, limit=5)
-                reference_context = self._format_reference_cases(cases)
-
         print("正在准备修复分支...")
         with self._step(trace_id, "CREATE_FIX_BRANCH"):
             branch_name = self.code_host.create_fix_branch("agentic-fix")
@@ -77,11 +71,11 @@ class AutoRepairOrchestrator:
         if claude_mode == "agentic":
             print("正在调用 Claude 直接修改仓库代码（agentic 模式）...")
             with self._step(trace_id, "AI_AGENTIC_EDIT"):
-                self.claude.execute_agentic_fix(error_content, cwd=self.repo_root, reference_context=reference_context)
+                self.claude.execute_agentic_fix(error_content, cwd=self.repo_root)
         else:
             print("正在向 Claude 请求结构化修复方案（code_block 输出）...")
             with self._step(trace_id, "AI_PROPOSE_PATCH"):
-                blocks = self.claude.propose_fix_code_blocks(error_content, reference_context=reference_context)
+                blocks = self.claude.propose_fix_code_blocks(error_content)
 
             print("正在应用 Claude 提供的文件变更...")
             with self._step(trace_id, "APPLY_PATCH"):
@@ -94,9 +88,6 @@ class AutoRepairOrchestrator:
         print("正在生成 PR 报告总结 (原因、过程、结论)...")
         with self._step(trace_id, "AI_SUMMARY"):
             analysis = self.claude.get_structured_summary(error_content)
-
-        diff_text = self._git_diff()
-        changed_files_json = self._git_changed_files_json()
 
         print("正在提交修复代码并创建 PR...")
         commit_msg = f"fix(ai): agentic auto-repair for detected error\n\nLog: {error_content[:100]}..."
@@ -123,11 +114,11 @@ class AutoRepairOrchestrator:
             pr_url = self.code_host.create_pull_request(branch_name, pr_title, pr_body)
             print(f"PR 已创建: {pr_url}")
 
-        if getattr(config, "EMAIL_ENABLED", True):
-            print("正在发送 HTML 修复报告邮件...")
-            subject = "🛠️ AI 自动修复完成：PR 已提交"
-            html_content = self._build_email_html(error_content, analysis, pr_url)
-            with self._step(trace_id, "NOTIFY"):
+        print("正在发送 HTML 修复报告邮件...")
+        subject = "🛠️ AI 自动修复完成：PR 已提交"
+        html_content = self._build_email_html(error_content, analysis, pr_url)
+        with self._step(trace_id, "NOTIFY"):
+            if getattr(config, "EMAIL_ENABLED", True):
                 self.email.send_email(subject, html_content, is_html=True)
 
         with self._step(trace_id, "CLEANUP"):
@@ -135,110 +126,8 @@ class AutoRepairOrchestrator:
         print("本次代理修复流程圆满完成。")
 
         if self.trace_store:
-            self.trace_store.record_bug_case_revision(
-                trace_id=trace_id,
-                repo_url=repo_url or "",
-                code_host=self.code_host_name,
-                trigger_type="ERROR",
-                trigger_text=error_content,
-                pr_url=pr_url,
-                commit_sha=commit_sha,
-                changed_files_json=changed_files_json,
-                diff_text=diff_text,
-                preflight_ok=1,
-            )
             self.trace_store.finish_trace_ok(trace_id, pr_url, commit_sha)
         return pr_url
-
-    def handle_pr_feedback(self, pr_url, pr_number, feedback, repo_url=None, trace_id=None):
-        print("\n[!] 检测到 PR 审查意见，开始基于评论更新代码...")
-
-        require_non_empty("CLAUDE_COMMAND", config.CLAUDE_COMMAND)
-
-        if self.code_host_name == "gitlab":
-            require_non_empty("GITLAB_TOKEN", config.GITLAB_TOKEN)
-            require_non_empty("GITLAB_PROJECT", config.GITLAB_PROJECT)
-            require_non_empty("GITLAB_BASE_URL", config.GITLAB_BASE_URL)
-        elif self.code_host_name == "github":
-            require_non_empty("GITHUB_TOKEN", config.GITHUB_TOKEN)
-        else:
-            raise ValueError(f"Unsupported CODE_HOST: {self.code_host_name}")
-
-        signature = build_error_signature(feedback)
-        if self.trace_store:
-            if not trace_id:
-                trace_id = self.trace_store.new_trace_id()
-                self.trace_store.create_trace(
-                    trace_id=trace_id,
-                    repo_url=repo_url or "",
-                    code_host=self.code_host_name,
-                    error_signature=signature,
-                    error_excerpt=(feedback or "")[:2000],
-                )
-
-        reference_context = ""
-        if self.trace_store and repo_url:
-            with self._step(trace_id, "KB_RETRIEVE"):
-                cases = self.trace_store.search_similar_cases(repo_url, feedback, limit=5)
-                reference_context = self._format_reference_cases(cases)
-
-        branch_name = ""
-        if self.code_host_name == "github":
-            print("正在拉取 PR 分支...")
-            with self._step(trace_id, "FETCH_PR_BRANCH"):
-                branch_name = self.code_host.fetch_pr_branch(int(pr_number))
-        else:
-            raise ValueError("PR 评论驱动更新暂不支持 GitLab。")
-
-        claude_mode = (getattr(config, "CLAUDE_FIX_MODE", "code_blocks") or "code_blocks").strip().lower()
-        if claude_mode == "agentic":
-            print("正在调用 Claude 直接修改仓库代码（agentic 模式）...")
-            with self._step(trace_id, "AI_AGENTIC_EDIT"):
-                self.claude.execute_agentic_pr_feedback(pr_url, feedback, cwd=self.repo_root, reference_context=reference_context)
-        else:
-            print("正在向 Claude 请求结构化更新方案（code_block 输出）...")
-            with self._step(trace_id, "AI_PROPOSE_PATCH"):
-                blocks = self.claude.propose_pr_feedback_code_blocks(pr_url, feedback, reference_context=reference_context)
-
-            print("正在应用 Claude 提供的文件变更...")
-            with self._step(trace_id, "APPLY_PATCH"):
-                self._apply_code_blocks(blocks)
-
-        print("正在运行提交前检查...")
-        with self._step(trace_id, "PREFLIGHT_CHECK"):
-            self._run_preflight_checks()
-
-        diff_text = self._git_diff()
-        changed_files_json = self._git_changed_files_json()
-
-        print("正在提交修复代码并更新 PR 分支...")
-        short_feedback = " ".join((feedback or "").strip().split())
-        if len(short_feedback) > 120:
-            short_feedback = short_feedback[:120] + "..."
-        commit_msg = f"chore(ai): address PR feedback\n\nPR: {pr_url}\nFeedback: {short_feedback}"
-        commit_sha = ""
-        with self._step(trace_id, "GIT_COMMIT_PUSH"):
-            self.code_host.commit_and_push(branch_name, commit_msg)
-            if hasattr(self.code_host, "git") and hasattr(self.code_host.git, "current_commit"):
-                commit_sha = self.code_host.git.current_commit()
-
-        if self.trace_store:
-            self.trace_store.record_bug_case_revision(
-                trace_id=trace_id,
-                repo_url=repo_url or "",
-                code_host=self.code_host_name,
-                trigger_type="PR_COMMENT",
-                trigger_text=feedback,
-                pr_url=pr_url,
-                commit_sha=commit_sha,
-                changed_files_json=changed_files_json,
-                diff_text=diff_text,
-                preflight_ok=1,
-            )
-            self.trace_store.finish_trace_ok(trace_id, pr_url, commit_sha)
-
-        print("本次 PR 评论驱动更新完成。")
-        return {"mr_url": pr_url, "branch": branch_name, "commit_sha": commit_sha}
 
     def _step(self, trace_id, step_name):
         if not self.trace_store or not trace_id:
@@ -254,39 +143,6 @@ class AutoRepairOrchestrator:
             cwd=self.repo_root,
             check=True,
         )
-
-    def _git_diff(self):
-        result = subprocess.run(
-            ["git", "diff"],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            cwd=self.repo_root,
-            check=True,
-        )
-        return (result.stdout or "")[:200000]
-
-    def _git_changed_files_json(self):
-        result = subprocess.run(
-            ["git", "diff", "--name-only"],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            cwd=self.repo_root,
-            check=True,
-        )
-        files = [ln.strip() for ln in (result.stdout or "").splitlines() if ln.strip()]
-        return str(files)[:20000]
-
-    def _format_reference_cases(self, cases):
-        items = []
-        for idx, c in enumerate(cases or [], start=1):
-            case_id = c.get("case_id") or ""
-            ex = c.get("exception_type") or ""
-            msg = c.get("message_key") or ""
-            frames = c.get("top_frames") or ""
-            items.append(f"[{idx}] case_id={case_id}\n- exception={ex}\n- message={msg}\n- frames={frames}\n")
-        return "\n".join(items).strip()
 
     def _apply_code_blocks(self, blocks):
         for rel_path, content in blocks:

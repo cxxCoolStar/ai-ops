@@ -1,6 +1,6 @@
 # 端到端测试步骤（Agent → Server → Claude → PR → 邮件）
 
-本文档用于在本机复现一整套闭环流程：Agent 监听应用日志，发现错误后上报 Server；Server 拉取仓库、调用 Claude 生成修复、提交分支并创建 PR，最后发送邮件通知。
+本文档用于在本机复现一整套闭环流程：应用输出日志 →（可选）ELK 收集 → Agent 拉取错误并上报 Server → Server 拉取仓库、调用 Claude 生成修复、提交分支并创建 PR → 发送邮件通知。
 
 ## 0. 前置条件
 
@@ -8,6 +8,7 @@
 - 依赖已安装（例如 `watchdog`、`python-dotenv`、`PyGithub` 等）
 - 本机能访问 GitHub 与邮箱 SMTP
 - Claude CLI 可用（`CLAUDE_COMMAND` 指向可执行命令）
+- 如使用 ELK 模式：本机可访问 Elasticsearch（`ELK_URL`）
 
 ## 1. 准备被修复的示例仓库
 
@@ -62,6 +63,23 @@
 
 如设置了该值，则 Agent 上报时需要带 `--api-key` 或设置 `AGENT_API_KEY`。
 
+### 2.6 Agent（上报目标仓库）
+
+- `AGENT_REPO_URL=<需要被修复的仓库 git url>`
+
+说明：
+- Agent 上报给 Server 的 `repo_url` 默认从 `AGENT_REPO_URL` 读取，也可用 `--repo-url` 临时覆盖。
+- 不同应用部署多个 Agent 时，通过各自环境变量配置不同 `AGENT_REPO_URL`。
+
+### 2.7 可选：ELK（Agent 从 Elasticsearch 拉取错误日志）
+
+- `ELK_URL=http://127.0.0.1:9200`
+- `ELK_INDEX=filebeat-*`
+- `ELK_QUERY=service.name:demo-app AND log.level:ERROR`
+- `ELK_POLL_SECONDS=2`
+- `ELK_SINCE_SECONDS=300`
+- `ELK_BATCH_SIZE=50`
+
 ## 3. 启动服务端（Server）
 
 在 `ai-ops` 工程目录执行：
@@ -82,17 +100,23 @@ python scripts/server.py
 ```powershell
 python scripts/agent.py `
   --log-path "C:\Users\asta1\PycharmProjects\ai-ops-example\app.log" `
-  --repo-url "https://github.com/cxxCoolStar/ai-ops-example.git" `
   --server-url "http://127.0.0.1:8080" `
   --code-host github
 ```
+
+如你希望不在命令行传 repo_url，请在环境变量里配置：
+
+```powershell
+set AGENT_REPO_URL=https://github.com/cxxCoolStar/ai-ops-example.git
+```
+
+也可以用 `--repo-url` 临时覆盖环境配置。
 
 如果 Server 开启鉴权（设置了 `SERVER_API_KEY`），增加 `--api-key`：
 
 ```powershell
 python scripts/agent.py `
   --log-path "C:\Users\asta1\PycharmProjects\ai-ops-example\app.log" `
-  --repo-url "https://github.com/cxxCoolStar/ai-ops-example.git" `
   --server-url "http://127.0.0.1:8080" `
   --code-host github `
   --api-key "<共享key>"
@@ -103,7 +127,6 @@ python scripts/agent.py `
 ```powershell
 python scripts/agent.py `
   --log-path "C:\Users\asta1\PycharmProjects\ai-ops-example\app.log" `
-  --repo-url "https://github.com/cxxCoolStar/ai-ops-example.git" `
   --server-url "http://127.0.0.1:8080" `
   --code-host github `
   --dedup-window-seconds 0
@@ -114,6 +137,21 @@ python scripts/agent.py `
 - `开始监控文件: ...app.log`
 - `检测到关键词: ... ERROR ...`
 - `[agent] reported error, task_id=...`
+
+## 4.1 启动 Agent（从 ELK 拉取错误日志）
+
+当日志由 Filebeat/Logstash 等写入 Elasticsearch 后，可以用 ELK 模式替代“监听文件”：
+
+```powershell
+set AGENT_REPO_URL=https://github.com/cxxCoolStar/ai-ops-example.git
+python scripts/agent.py `
+  --source elk `
+  --elk-url "http://127.0.0.1:9200" `
+  --elk-index "filebeat-*" `
+  --elk-query "service.name:demo-app AND log.level:ERROR" `
+  --server-url "http://127.0.0.1:8080" `
+  --code-host github
+```
 
 ## 5. 触发一次错误（写入 ERROR 日志）
 
