@@ -2,7 +2,7 @@ import os
 import re
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=True)
 
 def _env_int(name, default):
     raw = os.getenv(name)
