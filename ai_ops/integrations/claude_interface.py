@@ -31,7 +31,7 @@ class ClaudeInterface:
 
     def propose_fix_code_blocks(self, error_content):
         prompt = (
-            "你是一个资深 Python 工程师。请根据下面的错误日志，在当前项目中给出修复方案。\n"
+            "你是一个资深软件工程师。请根据下面的错误日志，在当前项目中给出修复方案（项目可能是 Java/Spring 或 Python 等）。\n"
             "要求：\n"
             "1) 只输出一个或多个 <code_block filename=\"...\">...</code_block>，不要输出任何其它文字。\n"
             "2) 每个 code_block 的内容必须是对应文件的完整内容（不是 diff，也不是片段）。\n"
@@ -51,13 +51,14 @@ class ClaudeInterface:
         )
         blocks = self._parse_code_blocks(result.stdout)
         if not blocks:
-            raise ValueError("Claude 未返回任何 code_block。")
+            raw = (result.stdout or "").strip().replace("\r\n", "\n")
+            raise ValueError(f"Claude 未返回任何 code_block。raw={raw[:800]}")
         return blocks
 
     def _parse_code_blocks(self, text):
-        pattern = r'<code_block\s+filename="([^"]+)">\s*([\s\S]*?)\s*</code_block>'
+        pattern = r"<code_block\s+filename=(['\"])([^'\"]+)\1>\s*([\s\S]*?)\s*</code_block>"
         matches = re.findall(pattern, text or "", flags=re.IGNORECASE)
-        return [(filename.strip(), content) for filename, content in matches if filename.strip()]
+        return [(filename.strip(), content) for _, filename, content in matches if filename.strip()]
 
     def get_structured_summary(self, error_content):
         prompt = (

@@ -41,6 +41,23 @@ def _github_repo_from_url(repo_url):
             return f"{parts[-2]}/{parts[-1]}"
     return ""
 
+def _gitlab_project_from_url(repo_url):
+    url = (repo_url or "").strip()
+    if not url:
+        return ""
+    if url.startswith("http://") or url.startswith("https://"):
+        parsed = urlparse(url)
+        path = (parsed.path or "").strip("/")
+        if path.endswith(".git"):
+            path = path[: -len(".git")]
+        return path
+    if url.startswith("git@") and ":" in url:
+        path = url.split(":", 1)[-1].strip()
+        if path.endswith(".git"):
+            path = path[: -len(".git")]
+        return path.strip("/")
+    return ""
+
 
 class TaskRunner:
     def __init__(self):
@@ -134,9 +151,10 @@ class TaskRunner:
             self.tasks[task_id]["workspace_dir"] = ws_root
 
         try:
-            self.workspace.clone_into(repo_url, repo_dir)
+            self.workspace.clone_into(repo_url, repo_dir, code_host=code_host)
             if code_host == "gitlab":
-                platform = GitLabService(cwd=repo_dir)
+                project = _gitlab_project_from_url(repo_url) or config.GITLAB_PROJECT
+                platform = GitLabService(cwd=repo_dir, project=project)
             elif code_host == "github":
                 repo_name = _github_repo_from_url(repo_url) or config.GITHUB_REPO
                 platform = GitHubService(cwd=repo_dir, repo_name=repo_name)
@@ -197,12 +215,13 @@ class TaskRunner:
             self.tasks[task_id]["workspace_dir"] = ws_root
 
         try:
-            self.workspace.clone_into(repo_url, repo_dir)
+            self.workspace.clone_into(repo_url, repo_dir, code_host=code_host)
             if code_host == "github":
                 repo_name = _github_repo_from_url(repo_url) or config.GITHUB_REPO
                 platform = GitHubService(cwd=repo_dir, repo_name=repo_name)
             elif code_host == "gitlab":
-                platform = GitLabService(cwd=repo_dir)
+                project = _gitlab_project_from_url(repo_url) or config.GITLAB_PROJECT
+                platform = GitLabService(cwd=repo_dir, project=project)
             else:
                 raise ValueError(f"Unsupported code_host: {code_host}")
 

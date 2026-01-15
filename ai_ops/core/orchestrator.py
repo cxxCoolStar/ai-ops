@@ -43,9 +43,12 @@ class AutoRepairOrchestrator:
         require_non_empty("CLAUDE_COMMAND", config.CLAUDE_COMMAND)
 
         if self.code_host_name == "gitlab":
-            require_non_empty("GITLAB_TOKEN", config.GITLAB_TOKEN)
-            require_non_empty("GITLAB_PROJECT", config.GITLAB_PROJECT)
-            require_non_empty("GITLAB_BASE_URL", config.GITLAB_BASE_URL)
+            token = getattr(self.code_host, "token", None) or config.GITLAB_TOKEN
+            project = getattr(self.code_host, "project", None) or config.GITLAB_PROJECT
+            base_url = getattr(self.code_host, "base_url", None) or config.GITLAB_BASE_URL
+            require_non_empty("GITLAB_TOKEN", token)
+            require_non_empty("GITLAB_PROJECT", project)
+            require_non_empty("GITLAB_BASE_URL", base_url)
         elif self.code_host_name == "github":
             require_non_empty("GITHUB_TOKEN", config.GITHUB_TOKEN)
         else:

@@ -8,10 +8,10 @@ from ai_ops.vcs.git_service import GitService
 
 
 class GitLabService:
-    def __init__(self, cwd=None):
-        self.base_url = config.GITLAB_BASE_URL.rstrip("/")
-        self.token = config.GITLAB_TOKEN
-        self.project = config.GITLAB_PROJECT
+    def __init__(self, cwd=None, project=None, base_url=None, token=None):
+        self.base_url = (base_url if base_url is not None else config.GITLAB_BASE_URL).rstrip("/")
+        self.token = token if token is not None else config.GITLAB_TOKEN
+        self.project = project if project is not None else config.GITLAB_PROJECT
         self.git = GitService(cwd=cwd)
 
     def create_fix_branch(self, error_type):
@@ -23,7 +23,11 @@ class GitLabService:
     def commit_and_push(self, branch_name, commit_message):
         self.git.add_all()
         self.git.commit(commit_message)
-        self.git.push("origin", branch_name)
+        if self.token:
+            extra_env = GitService._proxyless_env() if getattr(config, "GITLAB_DISABLE_PROXY", True) else None
+            self.git.push_with_token("origin", branch_name, self.token, extra_env=extra_env, disable_proxy=getattr(config, "GITLAB_DISABLE_PROXY", True))
+        else:
+            self.git.push("origin", branch_name)
 
     def clean_up(self, base_branch="main"):
         self.git.checkout(base_branch)
@@ -78,4 +82,3 @@ class GitLabService:
         with urllib.request.urlopen(req, timeout=config.GITLAB_TIMEOUT_SECONDS) as resp:
             raw = resp.read().decode("utf-8")
         return json.loads(raw) if raw else {}
-

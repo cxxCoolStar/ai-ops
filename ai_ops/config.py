@@ -46,6 +46,8 @@ GITHUB_REPO = os.getenv("GITHUB_REPO")
 GITLAB_BASE_URL = os.getenv("GITLAB_BASE_URL", "https://gitlab.com")
 GITLAB_TOKEN = os.getenv("GITLAB_TOKEN")
 GITLAB_PROJECT = os.getenv("GITLAB_PROJECT")
+GITLAB_USERNAME = os.getenv("GITLAB_USERNAME", "oauth2")
+GITLAB_DISABLE_PROXY = os.getenv("GITLAB_DISABLE_PROXY", "true").strip().lower() in ("1", "true", "yes", "on")
 GITLAB_TIMEOUT_SECONDS = _env_int("GITLAB_TIMEOUT_SECONDS", 30)
 
 HTTP_HOST = os.getenv("HTTP_HOST", "127.0.0.1")
