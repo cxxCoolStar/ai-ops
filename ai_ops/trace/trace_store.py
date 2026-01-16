@@ -447,6 +447,77 @@ class TraceStore:
             tokens = tokens[:16]
         return tokens
 
+    def list_bug_cases(self, repo_url=None, limit=50, offset=0):
+        query = "SELECT * FROM bug_cases"
+        params = []
+        if repo_url:
+            query += " WHERE repo_url = ?"
+            params.append(repo_url)
+        query += " ORDER BY updated_at DESC LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+
+        with self._connect() as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(query, params).fetchall()
+            return [dict(row) for row in rows]
+
+    def get_bug_case(self, case_id):
+        with self._connect() as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute("SELECT * FROM bug_cases WHERE case_id = ?", (case_id,)).fetchone()
+            return dict(row) if row else None
+
+    def get_bug_case_revisions(self, case_id):
+        with self._connect() as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute("SELECT * FROM bug_case_revisions WHERE case_id = ? ORDER BY created_at DESC", (case_id,)).fetchall()
+            return [dict(row) for row in rows]
+
+    def list_traces(self, limit=50, offset=0):
+        query = "SELECT * FROM traces ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        with self._connect() as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(query, (limit, offset)).fetchall()
+            return [dict(row) for row in rows]
+
+    def debug_retrieval(self, query_text):
+        features = self._extract_query_features(query_text)
+        exception_type = features.get("exception_type") or ""
+        normalized_query = features.get("normalized_query") or ""
+        signature = features.get("signature") or ""
+
+        matches = []
+        with self._connect() as conn:
+            conn.row_factory = sqlite3.Row
+            if signature:
+                rows = conn.execute(
+                    "SELECT * FROM bug_cases WHERE signature = ? ORDER BY quality_score DESC LIMIT 5",
+                    (signature,)
+                ).fetchall()
+                matches = [dict(r) for r in rows]
+
+            if not matches:
+                tokens = self._fts_query_tokens(exception_type, normalized_query)
+                if tokens:
+                    match_str = " ".join(tokens)
+                    rows = conn.execute(
+                        """
+                        SELECT c.* FROM bug_cases_fts
+                        JOIN bug_cases c ON c.case_id = bug_cases_fts.case_id
+                        WHERE bug_cases_fts.text MATCH ?
+                        ORDER BY bm25(bug_cases_fts) ASC, c.quality_score DESC
+                        LIMIT 5
+                        """,
+                        (match_str,)
+                    ).fetchall()
+                    matches = [dict(r) for r in rows]
+
+        return {
+            "features": features,
+            "matches": matches
+        }
+
+
 
 
 class StepScope:

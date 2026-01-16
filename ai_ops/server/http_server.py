@@ -353,20 +353,96 @@ class ApiHandler(BaseHTTPRequestHandler):
             self._send_json(200, {"ok": True, "task_id": task_id})
             return
 
+        if path == "/v1/debug/retrieval":
+            body = self._read_json()
+            error_content = body.get("error_content") or ""
+            if not error_content:
+                self._send_json(400, {"error": "error_content_required"})
+                return
+            result = self.runner.store.debug_retrieval(error_content)
+            self._send_json(200, result)
+            return
+
         if path != "/v1/tasks":
             self._send_json(404, {"error": "not_found"})
             return
 
     def do_GET(self):
-        if self.path.startswith("/v1/tasks/"):
-            task_id = self.path[len("/v1/tasks/") :].strip()
+        url = urlparse(self.path)
+        path = url.path
+
+        if path.startswith("/v1/tasks/"):
+            task_id = path[len("/v1/tasks/") :].strip()
             task = self.runner.get(task_id)
             if not task:
                 self._send_json(404, {"error": "not_found"})
                 return
             self._send_json(200, task)
             return
+
+        if path == "/v1/bug-cases":
+            cases = self.runner.store.list_bug_cases()
+            self._send_json(200, cases)
+            return
+
+        if path.startswith("/v1/bug-cases/"):
+            case_id = path[len("/v1/bug-cases/") :].strip()
+            case = self.runner.store.get_bug_case(case_id)
+            if not case:
+                self._send_json(404, {"error": "not_found"})
+                return
+            case["revisions"] = self.runner.store.get_bug_case_revisions(case_id)
+            self._send_json(200, case)
+            return
+
+        if path == "/v1/traces":
+            traces = self.runner.store.list_traces()
+            self._send_json(200, traces)
+            return
+
+        # Static UI Serving
+        ui_dir = os.path.join(os.path.dirname(__file__), "ui")
+        if path == "/":
+            path = "/index.html"
+
+        file_path = os.path.join(ui_dir, path.lstrip("/"))
+        if os.path.exists(file_path) and os.path.isfile(file_path):
+            # Security: ensure file is inside ui_dir
+            if os.path.abspath(file_path).startswith(os.path.abspath(ui_dir)):
+                self._send_file(file_path)
+                return
+
+        # Fallback for SPA
+        index_path = os.path.join(ui_dir, "index.html")
+        if not path.startswith("/v1/") and os.path.exists(index_path):
+            self._send_file(index_path)
+            return
+
         self._send_json(404, {"error": "not_found"})
+
+    def _send_file(self, file_path):
+        content_type = "text/plain"
+        if file_path.endswith(".html"):
+            content_type = "text/html"
+        elif file_path.endswith(".js"):
+            content_type = "application/javascript"
+        elif file_path.endswith(".css"):
+            content_type = "text/css"
+        elif file_path.endswith(".png"):
+            content_type = "image/png"
+        elif file_path.endswith(".svg"):
+            content_type = "image/svg+xml"
+
+        try:
+            with open(file_path, "rb") as f:
+                data = f.read()
+                self.send_response(200)
+                self.send_header("Content-Type", content_type)
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+        except Exception:
+            self._send_json(500, {"error": "internal_server_error"})
 
     def _read_body_bytes(self):
         length = int(self.headers.get("Content-Length", "0"))
