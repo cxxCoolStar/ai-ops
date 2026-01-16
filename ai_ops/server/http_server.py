@@ -7,7 +7,7 @@ import threading
 import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from ai_ops import config
 from ai_ops.core.orchestrator import AutoRepairOrchestrator, build_error_signature
@@ -265,6 +265,18 @@ class TaskRunner:
 class ApiHandler(BaseHTTPRequestHandler):
     runner = None
 
+    def _get_int_param(self, qs, key, default, minimum=None, maximum=None):
+        raw = (qs.get(key) or [None])[0]
+        try:
+            val = int(raw) if raw is not None and str(raw).strip() != "" else int(default)
+        except Exception:
+            val = int(default)
+        if minimum is not None:
+            val = max(int(minimum), val)
+        if maximum is not None:
+            val = min(int(maximum), val)
+        return val
+
     def do_POST(self):
         path = urlparse(self.path).path
         if path == "/v1/tasks":
@@ -370,6 +382,7 @@ class ApiHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         url = urlparse(self.path)
         path = url.path
+        qs = parse_qs(url.query or "")
 
         if path.startswith("/v1/tasks/"):
             task_id = path[len("/v1/tasks/") :].strip()
@@ -381,8 +394,16 @@ class ApiHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/v1/bug-cases":
-            cases = self.runner.store.list_bug_cases()
-            self._send_json(200, cases)
+            limit = self._get_int_param(qs, "limit", 50, minimum=1, maximum=200)
+            offset = self._get_int_param(qs, "offset", 0, minimum=0)
+            repo_url = (qs.get("repo_url") or [""])[0]
+            q = (qs.get("q") or [""])[0]
+            fmt = (qs.get("format") or [""])[0].strip().lower()
+            items, total = self.runner.store.query_bug_cases(repo_url=repo_url, q=q, limit=limit, offset=offset)
+            if fmt == "array":
+                self._send_json(200, items)
+            else:
+                self._send_json(200, {"items": items, "total": total, "limit": limit, "offset": offset})
             return
 
         if path.startswith("/v1/bug-cases/"):
@@ -396,8 +417,27 @@ class ApiHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/v1/traces":
-            traces = self.runner.store.list_traces()
-            self._send_json(200, traces)
+            limit = self._get_int_param(qs, "limit", 50, minimum=1, maximum=200)
+            offset = self._get_int_param(qs, "offset", 0, minimum=0)
+            repo_url = (qs.get("repo_url") or [""])[0]
+            status = (qs.get("status") or [""])[0]
+            fmt = (qs.get("format") or [""])[0].strip().lower()
+            items, total = self.runner.store.query_traces(repo_url=repo_url, status=status, limit=limit, offset=offset)
+            if fmt == "array":
+                self._send_json(200, items)
+            else:
+                self._send_json(200, {"items": items, "total": total, "limit": limit, "offset": offset})
+            return
+
+        if path.startswith("/v1/traces/"):
+            trace_id = path[len("/v1/traces/") :].strip()
+            trace = self.runner.store.get_trace(trace_id)
+            if not trace:
+                self._send_json(404, {"error": "not_found"})
+                return
+            steps = self.runner.store.list_steps(trace_id)
+            top_matches = self.runner.store.search_similar_cases(trace.get("repo_url") or "", trace.get("error_excerpt") or "", limit=1)
+            self._send_json(200, {"trace": trace, "steps": steps, "top_match": (top_matches[0] if top_matches else None)})
             return
 
         # Static UI Serving

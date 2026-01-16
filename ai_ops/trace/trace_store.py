@@ -97,7 +97,7 @@ class TraceStore:
             row = conn.execute(
                 """
                 SELECT trace_id, created_at, finished_at, repo_url, code_host,
-                       error_signature, status, failure_step, failure_message, mr_url, commit_sha
+                       error_signature, error_excerpt, status, failure_step, failure_message, mr_url, commit_sha
                 FROM traces WHERE trace_id=?
                 """,
                 (trace_id,),
@@ -111,6 +111,7 @@ class TraceStore:
             "repo_url",
             "code_host",
             "error_signature",
+            "error_excerpt",
             "status",
             "failure_step",
             "failure_message",
@@ -118,6 +119,20 @@ class TraceStore:
             "commit_sha",
         ]
         return dict(zip(keys, row))
+
+    def list_steps(self, trace_id):
+        with self._connect() as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT step_name, started_at, finished_at, status, message
+                FROM steps
+                WHERE trace_id=?
+                ORDER BY started_at ASC, id ASC
+                """,
+                (trace_id,),
+            ).fetchall()
+            return [dict(r) for r in rows]
 
     def search_similar_cases(self, repo_url, query_text, limit=5):
         repo_url = (repo_url or "").strip()
@@ -447,19 +462,103 @@ class TraceStore:
             tokens = tokens[:16]
         return tokens
 
-    def list_bug_cases(self, repo_url=None, limit=50, offset=0):
-        query = "SELECT * FROM bug_cases"
-        params = []
-        if repo_url:
-            query += " WHERE repo_url = ?"
-            params.append(repo_url)
-        query += " ORDER BY updated_at DESC LIMIT ? OFFSET ?"
-        params.extend([limit, offset])
+    def _is_sha256(self, s):
+        if not s or len(s) != 64:
+            return False
+        return bool(re.fullmatch(r"[0-9a-f]{64}", s.strip(), flags=re.IGNORECASE))
+
+    def _fts_free_text_tokens(self, text):
+        base = (text or "").strip()
+        base = self._normalize_text(base)
+        base = re.sub(r"[^\w<>\-: ]+", " ", base)
+        tokens = [t for t in base.split() if t and t not in ("<ts>", "<uuid>", "<hex>", "<path>", "<num>", "<str>")]
+        if len(tokens) > 16:
+            tokens = tokens[:16]
+        return tokens
+
+    def query_bug_cases(self, repo_url=None, q=None, limit=50, offset=0):
+        repo_url = (repo_url or "").strip()
+        q = (q or "").strip()
+        limit = max(int(limit), 1)
+        offset = max(int(offset), 0)
 
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
-            rows = conn.execute(query, params).fetchall()
-            return [dict(row) for row in rows]
+
+            if q and self._is_sha256(q):
+                where = ["signature = ?"]
+                params = [q]
+                if repo_url:
+                    where.insert(0, "repo_url = ?")
+                    params.insert(0, repo_url)
+                where_sql = " AND ".join(where)
+                total = conn.execute(f"SELECT COUNT(*) FROM bug_cases WHERE {where_sql}", params).fetchone()[0]
+                rows = conn.execute(
+                    f"SELECT * FROM bug_cases WHERE {where_sql} ORDER BY updated_at DESC LIMIT ? OFFSET ?",
+                    params + [limit, offset],
+                ).fetchall()
+                return [dict(r) for r in rows], int(total)
+
+            if q:
+                tokens = self._fts_free_text_tokens(q)
+                if tokens:
+                    match = " ".join(tokens)
+                    where = ["bug_cases_fts.text MATCH ?"]
+                    params = [match]
+                    if repo_url:
+                        where.insert(0, "c.repo_url = ?")
+                        params.insert(0, repo_url)
+                    where_sql = " AND ".join(where)
+                    total = conn.execute(
+                        f"""
+                        SELECT COUNT(*) FROM bug_cases_fts
+                        JOIN bug_cases c ON c.case_id=bug_cases_fts.case_id
+                        WHERE {where_sql}
+                        """,
+                        params,
+                    ).fetchone()[0]
+                    rows = conn.execute(
+                        f"""
+                        SELECT c.* FROM bug_cases_fts
+                        JOIN bug_cases c ON c.case_id=bug_cases_fts.case_id
+                        WHERE {where_sql}
+                        ORDER BY bm25(bug_cases_fts) ASC, c.quality_score DESC, c.updated_at DESC
+                        LIMIT ? OFFSET ?
+                        """,
+                        params + [limit, offset],
+                    ).fetchall()
+                    return [dict(r) for r in rows], int(total)
+
+                like = f"%{q.lower()}%"
+                where = ["(LOWER(exception_type) LIKE ? OR LOWER(message_key) LIKE ? OR signature LIKE ?)"]
+                params = [like, like, q]
+                if repo_url:
+                    where.insert(0, "repo_url = ?")
+                    params.insert(0, repo_url)
+                where_sql = " AND ".join(where)
+                total = conn.execute(f"SELECT COUNT(*) FROM bug_cases WHERE {where_sql}", params).fetchone()[0]
+                rows = conn.execute(
+                    f"SELECT * FROM bug_cases WHERE {where_sql} ORDER BY updated_at DESC LIMIT ? OFFSET ?",
+                    params + [limit, offset],
+                ).fetchall()
+                return [dict(r) for r in rows], int(total)
+
+            where = []
+            params = []
+            if repo_url:
+                where.append("repo_url = ?")
+                params.append(repo_url)
+            where_sql = f"WHERE {' AND '.join(where)}" if where else ""
+            total = conn.execute(f"SELECT COUNT(*) FROM bug_cases {where_sql}", params).fetchone()[0]
+            rows = conn.execute(
+                f"SELECT * FROM bug_cases {where_sql} ORDER BY updated_at DESC LIMIT ? OFFSET ?",
+                params + [limit, offset],
+            ).fetchall()
+            return [dict(r) for r in rows], int(total)
+
+    def list_bug_cases(self, repo_url=None, limit=50, offset=0):
+        items, _total = self.query_bug_cases(repo_url=repo_url, q=None, limit=limit, offset=offset)
+        return items
 
     def get_bug_case(self, case_id):
         with self._connect() as conn:
@@ -473,12 +572,34 @@ class TraceStore:
             rows = conn.execute("SELECT * FROM bug_case_revisions WHERE case_id = ? ORDER BY created_at DESC", (case_id,)).fetchall()
             return [dict(row) for row in rows]
 
-    def list_traces(self, limit=50, offset=0):
-        query = "SELECT * FROM traces ORDER BY created_at DESC LIMIT ? OFFSET ?"
+    def query_traces(self, repo_url=None, status=None, limit=50, offset=0):
+        repo_url = (repo_url or "").strip()
+        status = (status or "").strip().upper()
+        limit = max(int(limit), 1)
+        offset = max(int(offset), 0)
+
+        where = []
+        params = []
+        if repo_url:
+            where.append("repo_url = ?")
+            params.append(repo_url)
+        if status:
+            where.append("status = ?")
+            params.append(status)
+        where_sql = f"WHERE {' AND '.join(where)}" if where else ""
+
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
-            rows = conn.execute(query, (limit, offset)).fetchall()
-            return [dict(row) for row in rows]
+            total = conn.execute(f"SELECT COUNT(*) FROM traces {where_sql}", params).fetchone()[0]
+            rows = conn.execute(
+                f"SELECT * FROM traces {where_sql} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                params + [limit, offset],
+            ).fetchall()
+            return [dict(r) for r in rows], int(total)
+
+    def list_traces(self, limit=50, offset=0):
+        items, _total = self.query_traces(limit=limit, offset=offset)
+        return items
 
     def debug_retrieval(self, query_text):
         features = self._extract_query_features(query_text)

@@ -1,4 +1,4 @@
-const { useState, useEffect, useMemo } = React;
+const { useState, useEffect } = React;
 
 const App = () => {
     const [view, setView] = useState('library');
@@ -9,12 +9,24 @@ const App = () => {
     const [selectedCase, setSelectedCase] = useState(null);
     const [cases, setCases] = useState([]);
     const [traces, setTraces] = useState([]);
+    const [casePaging, setCasePaging] = useState({ limit: 50, offset: 0, total: 0 });
+    const [tracePaging, setTracePaging] = useState({ limit: 50, offset: 0, total: 0 });
 
     const fetchCases = async () => {
         try {
-            const res = await fetch('/v1/bug-cases');
+            const params = new URLSearchParams();
+            params.set('limit', casePaging.limit);
+            params.set('offset', casePaging.offset);
+            if (searchQuery.trim()) params.set('q', searchQuery.trim());
+            const res = await fetch(`/v1/bug-cases?${params.toString()}`);
             const data = await res.json();
-            setCases(Array.isArray(data) ? data : []);
+            const items = Array.isArray(data) ? data : (data.items || []);
+            setCases(items);
+            if (!Array.isArray(data)) {
+                setCasePaging(p => ({ ...p, limit: data.limit || p.limit, offset: data.offset || p.offset, total: data.total || 0 }));
+            } else {
+                setCasePaging(p => ({ ...p, offset: 0, total: items.length }));
+            }
         } catch (e) {
             console.error('Error fetching cases:', e);
             setCases([]);
@@ -23,9 +35,18 @@ const App = () => {
 
     const fetchTraces = async () => {
         try {
-            const res = await fetch('/v1/traces');
+            const params = new URLSearchParams();
+            params.set('limit', tracePaging.limit);
+            params.set('offset', tracePaging.offset);
+            const res = await fetch(`/v1/traces?${params.toString()}`);
             const data = await res.json();
-            setTraces(Array.isArray(data) ? data.map(t => ({ ...t, showDetail: false })) : []);
+            const items = Array.isArray(data) ? data : (data.items || []);
+            setTraces(items.map(t => ({ ...t, showDetail: false })));
+            if (!Array.isArray(data)) {
+                setTracePaging(p => ({ ...p, limit: data.limit || p.limit, offset: data.offset || p.offset, total: data.total || 0 }));
+            } else {
+                setTracePaging(p => ({ ...p, offset: 0, total: items.length }));
+            }
         } catch (e) {
             console.error('Error fetching traces:', e);
             setTraces([]);
@@ -45,18 +66,15 @@ const App = () => {
 
     useEffect(() => {
         if (view === 'library') fetchCases();
-        if (view === 'history') fetchTraces();
-    }, [view]);
+    }, [view, casePaging.offset, searchQuery]);
 
-    const filteredCases = useMemo(() => {
-        if (!searchQuery) return cases;
-        const q = searchQuery.toLowerCase();
-        return cases.filter(c =>
-            (c.exception_type || '').toLowerCase().includes(q) ||
-            (c.message_key || '').toLowerCase().includes(q) ||
-            (c.signature || '').includes(q)
-        );
-    }, [searchQuery, cases]);
+    useEffect(() => {
+        if (view === 'history') fetchTraces();
+    }, [view, tracePaging.offset]);
+
+    useEffect(() => {
+        if (view === 'library') setCasePaging(p => ({ ...p, offset: 0 }));
+    }, [searchQuery]);
 
     const formatDate = (ts) => {
         if (!ts) return 'N/A';
@@ -64,12 +82,27 @@ const App = () => {
         return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     };
 
-    const toggleTraceDetail = (id) => {
-        setTraces(prev => prev.map(t => t.trace_id === id ? { ...t, showDetail: !t.showDetail } : t));
+    const toggleTraceDetail = async (id) => {
+        const current = traces.find(t => t.trace_id === id);
+        const opening = !(current && current.showDetail);
+        if (!opening) {
+            setTraces(prev => prev.map(t => t.trace_id === id ? { ...t, showDetail: false } : t));
+            return;
+        }
+        setTraces(prev => prev.map(t => t.trace_id === id ? { ...t, showDetail: true } : t));
+        if (current && current.detail) return;
+        try {
+            const res = await fetch(`/v1/traces/${id}`);
+            const data = await res.json();
+            setTraces(prev => prev.map(t => t.trace_id === id ? { ...t, detail: data, showDetail: true } : t));
+        } catch (e) {
+            console.error('Error fetching trace detail:', e);
+        }
     };
 
     const debugTrace = (t) => {
-        setDebugInput(t.error_excerpt || t.query || '');
+        const text = (t.detail && t.detail.trace && t.detail.trace.error_excerpt) || t.error_excerpt || t.query || '';
+        setDebugInput(text);
         setView('debug');
         // Optionally trigger retrieval immediately
     };
@@ -124,8 +157,8 @@ const App = () => {
                         </header>
 
                         <div className="case-grid">
-                            {filteredCases.length === 0 && <div className="empty-state">No cases found.</div>}
-                            {filteredCases.map(c => (
+                            {cases.length === 0 && <div className="empty-state">No cases found.</div>}
+                            {cases.map(c => (
                                 <div key={c.case_id} className="case-card" onClick={() => fetchCaseDetail(c)}>
                                     <div className="card-glow"></div>
                                     <div className="card-content">
@@ -145,6 +178,22 @@ const App = () => {
                                     </div>
                                 </div>
                             ))}
+                        </div>
+                        <div className="action-btns" style={{ marginTop: '1.25rem', justifyContent: 'flex-end' }}>
+                            <button
+                                className="btn-outline"
+                                onClick={() => setCasePaging(p => ({ ...p, offset: Math.max(0, p.offset - p.limit) }))}
+                                disabled={casePaging.offset <= 0}
+                            >
+                                Prev
+                            </button>
+                            <button
+                                className="btn-outline"
+                                onClick={() => setCasePaging(p => ({ ...p, offset: p.offset + p.limit }))}
+                                disabled={casePaging.total > 0 ? (casePaging.offset + casePaging.limit) >= casePaging.total : cases.length < casePaging.limit}
+                            >
+                                Next
+                            </button>
                         </div>
                     </section>
                 )}
@@ -194,12 +243,37 @@ const App = () => {
                                                     <div className="trace-info-expanded">
                                                         <div className="info-block">
                                                             <strong>Original Error Excerpt:</strong>
-                                                            <pre>{t.error_excerpt || t.query || 'No data available'}</pre>
+                                                            <pre>{(t.detail && t.detail.trace && t.detail.trace.error_excerpt) || t.error_excerpt || t.query || 'No data available'}</pre>
                                                         </div>
                                                         <div className="info-block">
                                                             <strong>Status Message:</strong>
-                                                            <span>{t.failure_message || 'OK'}</span>
+                                                            <span>{(t.detail && t.detail.trace && t.detail.trace.failure_message) || t.failure_message || 'OK'}</span>
                                                         </div>
+                                                        {t.detail && t.detail.top_match && (
+                                                            <div className="info-block">
+                                                                <strong>Top Match</strong>
+                                                                <div className="match-item">
+                                                                    <div className="match-info">
+                                                                        <div className="match-title">{t.detail.top_match.exception_type}</div>
+                                                                        <div className="match-score">Score: {Math.round((t.detail.top_match.quality_score || 0) * 100)}%</div>
+                                                                        <div className="match-msg">{t.detail.top_match.message_key}</div>
+                                                                    </div>
+                                                                    <button className="btn-small" onClick={() => { setSelectedCase(t.detail.top_match); fetchCaseDetail(t.detail.top_match); }}>View Case</button>
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                        {t.detail && Array.isArray(t.detail.steps) && t.detail.steps.length > 0 && (
+                                                            <div className="info-block">
+                                                                <strong>Execution Steps</strong>
+                                                                <div className="frames-list">
+                                                                    {t.detail.steps.map((s, i) => (
+                                                                        <div key={i} className="frame-item">
+                                                                            [{s.status}] {s.step_name} — {formatDate(s.started_at)}{s.finished_at ? ` → ${formatDate(s.finished_at)}` : ''}
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 </td>
                                             </tr>
@@ -207,6 +281,22 @@ const App = () => {
                                     </tbody>
                                 ))}
                             </table>
+                        </div>
+                        <div className="action-btns" style={{ marginTop: '1.25rem', justifyContent: 'flex-end' }}>
+                            <button
+                                className="btn-outline"
+                                onClick={() => setTracePaging(p => ({ ...p, offset: Math.max(0, p.offset - p.limit) }))}
+                                disabled={tracePaging.offset <= 0}
+                            >
+                                Prev
+                            </button>
+                            <button
+                                className="btn-outline"
+                                onClick={() => setTracePaging(p => ({ ...p, offset: p.offset + p.limit }))}
+                                disabled={tracePaging.total > 0 ? (tracePaging.offset + tracePaging.limit) >= tracePaging.total : traces.length < tracePaging.limit}
+                            >
+                                Next
+                            </button>
                         </div>
                     </section>
                 )}
