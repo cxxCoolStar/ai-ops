@@ -117,6 +117,25 @@ class AutoRepairOrchestrator:
             pr_url = self.code_host.create_pull_request(branch_name, pr_title, pr_body)
             print(f"PR 已创建: {pr_url}")
 
+        if self.trace_store:
+            try:
+                self.trace_store.record_bug_case_revision(
+                    trace_id=trace_id,
+                    repo_url=repo_url or "",
+                    code_host=self.code_host_name,
+                    trigger_type="ERROR",
+                    trigger_text=error_content,
+                    pr_url=pr_url,
+                    pr_title=pr_title,
+                    pr_body=pr_body,
+                    commit_sha=commit_sha or "",
+                    changed_files_json="",
+                    diff_text="",
+                    preflight_ok=1,
+                )
+            except Exception:
+                pass
+
         print("正在发送 HTML 修复报告邮件...")
         subject = "🛠️ AI 自动修复完成：PR 已提交"
         html_content = self._build_email_html(error_content, analysis, pr_url)

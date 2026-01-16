@@ -438,6 +438,61 @@ body {
     text-decoration: underline;
 }
 
+.revisions-list {
+    margin-top: 1rem;
+}
+
+.rev-item {
+    padding: 0.75rem;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 10px;
+    margin-top: 0.75rem;
+}
+
+.rev-type {
+    display: inline-block;
+    font-size: 0.75rem;
+    color: var(--secondary);
+    margin-right: 0.5rem;
+}
+
+.rev-link {
+    color: var(--primary);
+    text-decoration: none;
+    margin-right: 0.5rem;
+}
+
+.rev-link:hover {
+    text-decoration: underline;
+}
+
+.rev-date {
+    color: var(--text-dim);
+    font-size: 0.75rem;
+}
+
+.rev-desc {
+    margin-top: 0.75rem;
+}
+
+.rev-desc-title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+}
+
+.rev-desc-body {
+    background: rgba(0, 0, 0, 0.3);
+    padding: 0.75rem;
+    border-radius: 8px;
+    font-size: 0.8rem;
+    font-family: 'Courier New', monospace;
+    white-space: pre-wrap;
+    word-break: break-word;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
 /* History Table */
 .history-table-container {
     background: var(--bg-card);

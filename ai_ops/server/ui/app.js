@@ -407,6 +407,12 @@ const App = () => {
                                                 {rev.commit_sha ? rev.commit_sha.substring(0, 7) : 'View Pull Request'}
                                             </a>
                                             <span className="rev-date">{formatDate(rev.created_at)}</span>
+                                            {(rev.pr_title || rev.pr_body) && (
+                                                <div className="rev-desc">
+                                                    {rev.pr_title && <div className="rev-desc-title">{rev.pr_title}</div>}
+                                                    {rev.pr_body && <pre className="rev-desc-body">{rev.pr_body}</pre>}
+                                                </div>
+                                            )}
                                         </div>
                                     ))}
                                 </div>

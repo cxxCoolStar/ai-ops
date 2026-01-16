@@ -186,6 +186,8 @@ class TraceStore:
         trigger_type,
         trigger_text,
         pr_url="",
+        pr_title="",
+        pr_body="",
         commit_sha="",
         changed_files_json="",
         diff_text="",
@@ -252,10 +254,10 @@ class TraceStore:
             conn.execute(
                 """
                 INSERT INTO bug_case_revisions(
-                    case_id, trace_id, trigger_type, trigger_text, pr_url, commit_sha,
+                    case_id, trace_id, trigger_type, trigger_text, pr_url, pr_title, pr_body, commit_sha,
                     changed_files_json, diff_text, preflight_ok, created_at
                 )
-                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     case_id,
@@ -263,6 +265,8 @@ class TraceStore:
                     trigger_type,
                     trigger_text[:20000],
                     (pr_url or "")[:2000],
+                    (pr_title or "")[:500],
+                    (pr_body or "")[:20000],
                     (commit_sha or "")[:200],
                     (changed_files_json or "")[:20000],
                     (diff_text or "")[:200000],
@@ -284,6 +288,13 @@ class TraceStore:
         conn.execute("PRAGMA journal_mode=WAL;")
         conn.execute("PRAGMA foreign_keys=ON;")
         return conn
+
+    def _ensure_column(self, conn, table, column, col_type):
+        rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+        existing = {r[1] for r in rows} if rows else set()
+        if column in existing:
+            return
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
 
     def _init_db(self):
         os.makedirs(os.path.dirname(self.db_path) or ".", exist_ok=True)
@@ -352,6 +363,8 @@ class TraceStore:
                     trigger_type TEXT NOT NULL,
                     trigger_text TEXT,
                     pr_url TEXT,
+                    pr_title TEXT,
+                    pr_body TEXT,
                     commit_sha TEXT,
                     changed_files_json TEXT,
                     diff_text TEXT,
@@ -367,6 +380,8 @@ class TraceStore:
                 USING fts5(case_id UNINDEXED, text)
                 """
             )
+            self._ensure_column(conn, "bug_case_revisions", "pr_title", "TEXT")
+            self._ensure_column(conn, "bug_case_revisions", "pr_body", "TEXT")
 
     def _row_to_case(self, row):
         keys = ["case_id", "signature", "exception_type", "message_key", "top_frames", "quality_score", "status", "updated_at"]
@@ -383,6 +398,10 @@ class TraceStore:
         signature_base = f"{exception_type}\n{message_key}\n{fingerprint}".strip()
         signature = hashlib.sha256(signature_base.encode("utf-8", errors="ignore")).hexdigest() if signature_base else ""
         normalized_query = self._normalize_query_text(exception_type, message_key, frames)
+        if not normalized_query:
+            normalized_query = re.sub(r"\s+", " ", normalized).strip()[:500]
+        if not signature and normalized_query:
+            signature = hashlib.sha256(normalized_query.encode("utf-8", errors="ignore")).hexdigest()
         return {
             "exception_type": exception_type,
             "message_key": message_key,
@@ -391,18 +410,31 @@ class TraceStore:
             "normalized_query": normalized_query,
         }
 
+    def _exception_simple_name(self, exception_type):
+        s = (exception_type or "").strip()
+        if not s:
+            return ""
+        s = s.split(":", 1)[0].strip()
+        s = s.split(".")[-1]
+        s = s.split("$")[-1]
+        return s.strip()
+
     def _extract_exception_line(self, normalized_text):
         lines = [ln.strip() for ln in (normalized_text or "").splitlines() if ln.strip()]
         if not lines:
             return "", ""
-        for ln in reversed(lines[-15:]):
-            m = re.match(r"^([A-Za-z_][A-Za-z0-9_]*(?:Error|Exception))\s*:\s*(.*)$", ln)
+        for ln in reversed(lines[-50:]):
+            m = re.match(r"^([A-Za-z_][A-Za-z0-9_.$]*(?:Error|Exception))\s*:\s*(.*)$", ln)
             if m:
-                return m.group(1), (m.group(2) or "").strip()
+                return self._exception_simple_name(m.group(1)), (m.group(2) or "").strip()
+        for ln in reversed(lines[-50:]):
+            m = re.search(r"([A-Za-z_][A-Za-z0-9_.$]*(?:Error|Exception))\s*:\s*(.*)$", ln)
+            if m:
+                return self._exception_simple_name(m.group(1)), (m.group(2) or "").strip()
         last = lines[-1]
-        m = re.match(r"^([A-Za-z_][A-Za-z0-9_]*(?:Error|Exception))\b", last)
+        m = re.search(r"([A-Za-z_][A-Za-z0-9_.$]*(?:Error|Exception))\b", last)
         if m:
-            return m.group(1), ""
+            return self._exception_simple_name(m.group(1)), ""
         return "", ""
 
     def _extract_frames(self, raw_text):
@@ -414,6 +446,16 @@ class TraceStore:
             func = m.group(3) or ""
             file_name = os.path.basename(file_path.replace("\\", "/"))
             if not file_name:
+                continue
+            frames.append(f"{file_name}:{func}")
+        java_pattern = re.compile(r"^\s*at\s+([A-Za-z0-9_.$]+)\(([A-Za-z0-9_.+$-]+):(\d+)\)\s*$", re.MULTILINE)
+        for m in java_pattern.finditer(raw):
+            full = (m.group(1) or "").strip()
+            file_name = (m.group(2) or "").strip()
+            if file_name.lower() in ("unknown source", "native method"):
+                continue
+            func = full.split(".")[-1] if full else ""
+            if not file_name or not func:
                 continue
             frames.append(f"{file_name}:{func}")
         return frames
@@ -456,8 +498,8 @@ class TraceStore:
 
     def _fts_query_tokens(self, exception_type, normalized_query):
         base = f"{exception_type or ''} {normalized_query or ''}".strip()
-        base = re.sub(r"[^\w<>\-: ]+", " ", base)
-        tokens = [t for t in base.split() if t and t not in ("<ts>", "<uuid>", "<hex>", "<path>", "<num>", "<str>")]
+        base = re.sub(r"[^\w<>\- ]+", " ", base)
+        tokens = [t.strip() for t in base.split() if t and t not in ("<ts>", "<uuid>", "<hex>", "<path>", "<num>", "<str>")]
         if len(tokens) > 16:
             tokens = tokens[:16]
         return tokens
@@ -470,8 +512,8 @@ class TraceStore:
     def _fts_free_text_tokens(self, text):
         base = (text or "").strip()
         base = self._normalize_text(base)
-        base = re.sub(r"[^\w<>\-: ]+", " ", base)
-        tokens = [t for t in base.split() if t and t not in ("<ts>", "<uuid>", "<hex>", "<path>", "<num>", "<str>")]
+        base = re.sub(r"[^\w<>\- ]+", " ", base)
+        tokens = [t.strip() for t in base.split() if t and t not in ("<ts>", "<uuid>", "<hex>", "<path>", "<num>", "<str>")]
         if len(tokens) > 16:
             tokens = tokens[:16]
         return tokens
